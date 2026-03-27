@@ -2287,7 +2287,7 @@ server <- function(input, output, session) {
         suppressMessages(suppressWarnings({
           tryCatch({
             readr::read_delim(
-              result$data,
+              I(result$data),
               delim = "|",
               col_names = c("Valid_date", "AQSID", "SiteName", "Parameter_name", "Reporting_units", "Value", "Averaging_period", "Data_Source", "AQI_Value", "AQI_Category", "Latitude", "Longitude", "Full_AQSID"),
               col_types = readr::cols(.default = col_character()),
@@ -2851,7 +2851,7 @@ server <- function(input, output, session) {
     tryCatch({
       response <- GET(url)
       if (status_code(response) == 200) {
-        data <- read_delim(content(response, "text"), 
+        data <- read_delim(I(content(response, "text")), 
                            delim = "|", 
                            col_names = c("Valid_date", "AQSID", "SiteName", "Parameter_name", "Reporting_units", "Value", "Averaging_period", "Data_Source", "AQI_Value", "AQI_Category", "Latitude", "Longitude", "Full_AQSID"),
                            col_types = cols(
