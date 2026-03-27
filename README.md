@@ -27,7 +27,7 @@ To use the AQS API features, you will need to set up your credentials. The app l
 ## Installation
 
 1.  Clone this repository.
-2.  Open `Shiny_Smoke_Analysis_App_v4.R` in RStudio.
+2.  Open `app.R` in RStudio.
 3.  Install missing dependencies using `renv` or `install.packages()`.
 4.  Run the app using `shiny::runApp()`.
 
