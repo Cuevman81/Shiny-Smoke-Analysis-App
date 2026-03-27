@@ -1,0 +1,16 @@
+.Rproj.user
+.RData
+.Rhistory
+.Renviron
+.DS_Store
+*.pdf
+active-sites.dat
+monitoring_site_locations.dat
+archive/
+cache/
+met/
+out/
+www/
+tmp/
+*.png
+*.gif
