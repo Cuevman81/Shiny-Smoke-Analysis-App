@@ -16,19 +16,44 @@
 # DO NOT MODIFY Shiny_Smoke_Analysis_App.R or Shiny_Smoke_Analysis_App_v2.R
 
 # ============================================================
+# ============================================================
 # 1. PACKAGES
 # ============================================================
-pkg_list <- c(
-  "shiny","bslib","dplyr","ggplot2","sf","lubridate","stringr","tidyr","scales",
-  "httr","readr","ggnewscale","purrr","cowplot","tools","tidygeocoder",
-  "maptiles","ggspatial","osmdata","ggrepel","tigris","maps","aqsr","stringi",
-  "shinycssloaders","leaflet","leaflet.extras2","plotly","DT","shinyWidgets",
-  "shinydashboard","shinyjs","splitr","furrr"
-)
-
-# Load all listed packages
-suppressPackageStartupMessages({ 
-  for (p in pkg_list) library(p, character.only = TRUE) 
+suppressPackageStartupMessages({
+  library(shiny)
+  library(bslib)
+  library(dplyr)
+  library(ggplot2)
+  library(sf)
+  library(lubridate)
+  library(stringr)
+  library(tidyr)
+  library(scales)
+  library(httr)
+  library(readr)
+  library(ggnewscale)
+  library(purrr)
+  library(cowplot)
+  library(tools)
+  library(tidygeocoder)
+  library(maptiles)
+  library(ggspatial)
+  library(osmdata)
+  library(ggrepel)
+  library(tigris)
+  library(maps)
+  library(aqsr)
+  library(stringi)
+  library(shinycssloaders)
+  library(leaflet)
+  library(leaflet.extras2)
+  library(plotly)
+  library(DT)
+  library(shinyWidgets)
+  library(shinydashboard)
+  library(shinyjs)
+  library(splitr)
+  library(furrr)
 })
 
 # Optional/system-dependent packages
