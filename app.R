@@ -248,13 +248,16 @@ state_agency_lookup <- c(
 ## START of new code snippet ##
 safe_download <- function(url, error_message = "Download failed") {
   tryCatch({
-    response <- httr::GET(url, timeout(60))
+    response <- httr::GET(url, httr::timeout(60))
+    cat(paste0("\n[", Sys.time(), "] Download URL: ", url, " - Status: ", httr::status_code(response), "\n"))
+    
     if (httr::status_code(response) == 200) {
-      return(list(success = TRUE, data = httr::content(response, "text")))
+      return(list(success = TRUE, data = httr::content(response, "text", encoding = "UTF-8")))
     } else {
       return(list(success = FALSE, message = paste(error_message, "- Status:", httr::status_code(response))))
     }
   }, error = function(e) {
+    cat(paste0("\n[", Sys.time(), "] Download Error for: ", url, " - Error: ", e$message, "\n"))
     return(list(success = FALSE, message = paste(error_message, "-", e$message)))
   })
 }
@@ -468,7 +471,7 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
   tryCatch({
     selected_year <- format(selectedDate, "%Y")
     
-    base_url <- paste0("https://s3-us-west-1.amazonaws.com//files.airnowtech.org/airnow/", selected_year, "/")
+    base_url <- paste0("https://files.airnowtech.org/airnow/", selected_year, "/")
     formatted_date <- format(selectedDate, "%Y%m%d")
     daily_data_files <- readLines(paste0(base_url, formatted_date, "/daily_data_v2.dat"))
     
@@ -1189,7 +1192,7 @@ fetch_airnow_hourly <- function(start_date, end_date, states = NULL) {
     if (exists("incProgress")) incProgress(1/n, detail = paste("AirNow Hr", i, "of", n))
     dt <- seq_h[i]
     ymd_str <- format(dt, "%Y%m%d"); hr_str <- format(dt, "%H")
-    url <- paste0("https://s3-us-west-1.amazonaws.com//files.airnowtech.org/airnow/",
+    url <- paste0("https://files.airnowtech.org/airnow/",
                   format(dt, "%Y"), "/", ymd_str, "/HourlyAQObs_", ymd_str, hr_str, ".dat")
     res <- try(GET(url), silent = TRUE)
     if (!inherits(res, "try-error") && status_code(res) == 200) {
@@ -1223,7 +1226,7 @@ fetch_airnow_daily <- function(start_date, end_date, bbox = NULL, states = NULL)
     if (exists("incProgress")) incProgress(1/n, detail = paste("AirNow Daily", i, "of", n))
     d <- seq_d[i]
     ymd_str <- format(d, "%Y%m%d")
-    url <- paste0("https://s3-us-west-1.amazonaws.com//files.airnowtech.org/airnow/",
+    url <- paste0("https://files.airnowtech.org/airnow/",
                   format(d, "%Y"), "/", ymd_str, "/daily_data_v2.dat")
     res <- try(httr::GET(url), silent = TRUE)
     if (!inherits(res, "try-error") && httr::status_code(res) == 200) {
@@ -2297,20 +2300,17 @@ server <- function(input, output, session) {
     }
     
     date_sequence <- seq.Date(from = as.Date(start_date), to = as.Date(end_date), by = "day")
-    plan(multisession) 
+    # Parallelism is handled by the future_promise wrapper
     
     urls <- sapply(date_sequence, function(date) {
       year <- format(date, "%Y")
       yyyymmdd <- format(date, "%Y%m%d")
-      paste0("https://s3-us-west-1.amazonaws.com//files.airnowtech.org/airnow/", year, "/", yyyymmdd, "/daily_data_v2.dat")
+      paste0("https://files.airnowtech.org/airnow/", year, "/", yyyymmdd, "/daily_data_v2.dat")
     })
     
     # Run the download in the background
-    all_data <- future_map_dfr(urls, function(url) {
-      # The code inside this block runs in a separate R session
-      # safe_download uses 'httr', and we parse with 'readr'
-      # They must be loaded in the worker.
-      
+    # Run the download sequentially inside the background promise for maximum cloud stability
+    all_data <- purrr::map_dfr(urls, function(url) {
       result <- safe_download(url)
       if (result$success) {
         suppressMessages(suppressWarnings({
@@ -2327,13 +2327,7 @@ server <- function(input, output, session) {
       } else {
         NULL
       }
-    }, 
-    ## START OF THE CRITICAL FIX ##
-    # This .options argument tells each parallel worker which packages to load
-    # and ensures reproducible random number generation, fixing both issues.
-    .options = furrr_options(packages = c("httr", "readr"), seed = TRUE)
-    ## END OF THE CRITICAL FIX ##
-    )
+    })
     
     # Perform final data processing
     if (is.null(all_data) || nrow(all_data) == 0) {
@@ -2875,7 +2869,7 @@ server <- function(input, output, session) {
   downloadTrajectoryAirNowData <- memoise(function(date) {
     year <- format(date, "%Y")
     yyyymmdd <- format(date, "%Y%m%d")
-    url <- paste0("https://s3-us-west-1.amazonaws.com//files.airnowtech.org/airnow/", year, "/", yyyymmdd, "/daily_data_v2.dat")
+    url <- paste0("https://files.airnowtech.org/airnow/", year, "/", yyyymmdd, "/daily_data_v2.dat")
     
     tryCatch({
       response <- GET(url)
