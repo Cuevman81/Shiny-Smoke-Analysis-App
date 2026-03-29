@@ -2056,25 +2056,27 @@ server <- function(input, output, session) {
   observeEvent(input$sd_key,    { updateTextInput(session, "settings_aqs_key", value = input$sd_key) })
 
   output$api_status_dashboard <- renderUI({
-    # Check for keys
-    has_airnow  <- nchar(Sys.getenv("AIRNOW_API_KEY")) > 0
-    has_aqs     <- nchar(Sys.getenv("AQS_KEY")) > 0
-    has_openai  <- nchar(Sys.getenv("OPENAI_API_KEY")) > 0
-    has_anthro  <- nchar(Sys.getenv("ANTHROPIC_API_KEY")) > 0
-    has_google  <- nchar(Sys.getenv("GOOGLE_API_KEY")) > 0
-    has_census  <- nchar(Sys.getenv("CENSUS_API_KEY")) > 0
+    # 1. Check AQS Credentials
+    has_aqs_email <- nchar(input$settings_aqs_email %||% Sys.getenv("AQS_EMAIL")) > 0
+    has_aqs_key   <- nchar(input$settings_aqs_key   %||% Sys.getenv("AQS_KEY"))   > 0
     
-    status_tag <- function(label, exists) {
-      color <- if(exists) "#28a745" else "#dc3545"
-      icon  <- if(exists) "check-circle" else "times-circle"
+    # 2. Check AirNow Reachability (Public S3)
+    # We check if we can reach the main data index
+    airnow_status <- tryCatch({
+      res <- httr::HEAD("https://files.airnowtech.org/airnow/", httr::timeout(2))
+      httr::status_code(res) == 200
+    }, error = function(e) FALSE)
+    
+    status_tag <- function(label, success, missing_text = " (Missing)", success_text = " (Connected)") {
+      color <- if(success) "#28a745" else "#dc3545"
+      icon_name  <- if(success) "check-circle" else "times-circle"
       tags$div(style = paste0("color:", color, "; margin-bottom:5px; font-weight:bold;"),
-               icon(icon), " ", label, if(exists) " (Connected)" else " (Missing)")
+               icon(icon_name), " ", label, if(success) success_text else missing_text)
     }
     
     tagList(
-      status_tag("AirNow API", has_airnow),
-      status_tag("AQS API", has_aqs),
-      status_tag("Census API", has_census)
+      status_tag("AQS Credentials", has_aqs_email && has_aqs_key),
+      status_tag("AirNow Data Server", airnow_status, " (Unreachable)", " (Online)")
     )
   })
 
