@@ -1,6 +1,6 @@
-# Air Quality & HMS Smoke Analysis App (v4)
-
 A comprehensive R Shiny application for nationwide PM2.5 monitoring and HMS (Hazard Mapping System) smoke analysis. This tool is designed for air quality analysts and regulatory agencies to investigate exceptional events and smoke impacts across the United States.
+
+### 🚀 **Live Application**: [Shiny Smoke Analysis App](https://rcuevas.shinyapps.io/Shiny_Smoke_Analysis/)
 
 ## Features
 
