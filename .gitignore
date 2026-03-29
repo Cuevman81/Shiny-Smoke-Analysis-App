@@ -10,7 +10,4 @@ archive/
 cache/
 met/
 out/
-www/
 tmp/
-*.png
-*.gif
