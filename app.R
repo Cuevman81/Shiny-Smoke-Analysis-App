@@ -20,14 +20,18 @@
 # ============================================================
 pkg_list <- c(
   "shiny","bslib","dplyr","ggplot2","sf","lubridate","stringr","tidyr","scales",
-  "httr","readr","archive","ggnewscale","purrr","cowplot","tools","tidygeocoder",
+  "httr","readr","ggnewscale","purrr","cowplot","tools","tidygeocoder",
   "maptiles","ggspatial","osmdata","ggrepel","tigris","maps","aqsr","stringi",
   "shinycssloaders","leaflet","leaflet.extras2","plotly","DT","shinyWidgets",
   "shinydashboard","shinyjs","splitr","furrr"
 )
-new_pkgs <- pkg_list[!(pkg_list %in% installed.packages()[,"Package"])]
-if (length(new_pkgs)) install.packages(new_pkgs, repos = "https://cloud.r-project.org")
-suppressPackageStartupMessages({ for (p in pkg_list) library(p, character.only = TRUE) })
+
+# Load all listed packages
+suppressPackageStartupMessages({ 
+  for (p in pkg_list) library(p, character.only = TRUE) 
+})
+
+# Optional/system-dependent packages
 if (requireNamespace("terra", quietly = TRUE)) suppressPackageStartupMessages(library(terra))
 
 options(tigris_use_cache = TRUE, shiny.maxRequestSize = 50 * 1024^2)
