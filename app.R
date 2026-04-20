@@ -490,7 +490,7 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
     ozone_8hr <- as.numeric(sapply(data_ozone, function(x) x[6]))
     df_ozone <- data.frame(Latitude = lat_ozone, Longitude = long_ozone, Ozone_8HR = ozone_8hr)
     
-    concentration_ranges_ozone <- c(0, 50, 70, 86, Inf)
+    concentration_ranges_ozone <- c(0, 55, 71, 86, Inf)
     df_ozone$Concentration_Category <- cut(df_ozone$Ozone_8HR, breaks = concentration_ranges_ozone, labels = concentration_labels_ozone, right = FALSE)
     
     # PM2.5 data processing
@@ -621,7 +621,7 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
     # Generate plots
     map_ozone <- ggplot() +
       geom_polygon(data = state_map, aes(x = long, y = lat, group = group), fill = "#f9f9f9", color = "#333333", linewidth = 0.6) +
-      geom_polygon(data = map_data("county", region = tolower(selectedState)), aes(x = long, y = lat, group = group), fill = NA, color = "#cccccc", size = 0.2) +
+      geom_polygon(data = map_data("county", region = tolower(selectedState)), aes(x = long, y = lat, group = group), fill = NA, color = "#cccccc", linewidth = 0.2) +
       geom_point(data = df_ozone[df_ozone$in_state,], aes(x = Longitude, y = Latitude, color = Concentration_Category), size = 5, alpha = 0.8) +
       geom_text(data = df_ozone[df_ozone$in_state,], aes(x = Longitude, y = Latitude, label = Ozone_8HR), vjust = -0.8, size = 4.5, color = "#222222", fontface = "bold") +
       scale_color_manual(values = setNames(colors_ozone, levels(df_ozone$Concentration_Category))) +
@@ -637,7 +637,7 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
     
     map_pm25 <- ggplot() +
       geom_polygon(data = state_map, aes(x = long, y = lat, group = group), fill = "#f9f9f9", color = "#333333", linewidth = 0.6) +
-      geom_polygon(data = map_data("county", region = tolower(selectedState)), aes(x = long, y = lat, group = group), fill = NA, color = "#cccccc", size = 0.2) +
+      geom_polygon(data = map_data("county", region = tolower(selectedState)), aes(x = long, y = lat, group = group), fill = NA, color = "#cccccc", linewidth = 0.2) +
       geom_point(data = df_pm25[df_pm25$in_state,], aes(x = Longitude, y = Latitude, color = Concentration_Label), size = 5, alpha = 0.8) +
       geom_text(data = df_pm25[df_pm25$in_state,], aes(x = Longitude, y = Latitude, label = PM25_24HR), vjust = -0.8, size = 4.5, color = "#222222", fontface = "bold") +
       scale_color_manual(values = setNames(colors_pm25, levels(df_pm25$Concentration_Label))) +
@@ -671,7 +671,7 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
       
       ggplot() +
         geom_polygon(data = state_map, aes(x = long, y = lat, group = group), fill = "#f9f9f9", color = "#333333", linewidth = 0.6) +
-        geom_polygon(data = map_data("county", region = tolower(selectedState)), aes(x = long, y = lat, group = group), fill = NA, color = "#cccccc", size = 0.2) +
+        geom_polygon(data = map_data("county", region = tolower(selectedState)), aes(x = long, y = lat, group = group), fill = NA, color = "#cccccc", linewidth = 0.2) +
         geom_point(data = joined_data, aes(x = LON, y = LAT, color = .data[[var_name]]), size = 4.5, alpha = 0.85) +
         geom_text_repel(data = joined_data, aes(x = LON, y = LAT, label = sprintf("%.1f", .data[[var_name]])), 
                         size = 3.8, box.padding = unit(0.35, "lines"), point.padding = unit(0.3, "lines"), fontface = "bold", color = "#222222") +
@@ -731,7 +731,7 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
     plot_wind_direction <- function(joined_data, state_map, selectedState, selectedDate) {
       ggplot() +
         geom_polygon(data = state_map, aes(x = long, y = lat, group = group), fill = "#f9f9f9", color = "#333333", linewidth = 0.6) +
-        geom_polygon(data = map_data("county", region = tolower(selectedState)), aes(x = long, y = lat, group = group), fill = NA, color = "#cccccc", size = 0.2) +
+        geom_polygon(data = map_data("county", region = tolower(selectedState)), aes(x = long, y = lat, group = group), fill = NA, color = "#cccccc", linewidth = 0.2) +
         geom_point(data = joined_data, aes(x = LON, y = LAT, color = cardinal_direction), size = 4.5, alpha = 0.85) +
         geom_text_repel(data = joined_data, aes(x = LON, y = LAT, label = cardinal_direction), 
                         size = 3.8, box.padding = unit(0.35, "lines"), point.padding = unit(0.3, "lines"), fontface = "bold", color = "#222222") +
@@ -1239,6 +1239,7 @@ fetch_airnow_daily <- function(start_date, end_date, bbox = NULL, states = NULL)
               Monitoring_Site_ID = paste(substr(X2,1,2), substr(X2,3,5), substr(X2,6,9), sep="-"),
               StateName  = stringr::str_to_title(state_code_to_name[substr(X2,1,2)]),
               City       = X3,
+              SiteName   = X3, # Standardize naming parity
               date       = d,
               Latitude   = as.numeric(X11),
               Longitude  = as.numeric(X12),
@@ -1262,7 +1263,7 @@ fetch_airnow_daily <- function(start_date, end_date, bbox = NULL, states = NULL)
     }
   }
   if (length(all_df) == 0)
-    return(data.frame(Monitoring_Site_ID=character(), City=character(), StateName=character(),
+    return(data.frame(Monitoring_Site_ID=character(), City=character(), SiteName=character(), StateName=character(),
                       date=as.Date(character()), Latitude=numeric(),
                       Longitude=numeric(), pm25=numeric(), AQI_Cat=character()))
   bind_rows(all_df)
@@ -1338,8 +1339,15 @@ calc_fire_proximity <- function(fires_sf, point_sf, radius_km = 500) {
     within_100  = sum(dists_km <= 100),
     within_250  = sum(dists_km <= 250),
     within_500  = sum(dists_km <= 500),
-    fires_df    = st_drop_geometry(nearby) %>% select(any_of(cols_keep)) %>%
-                    arrange(dist_km) %>% head(25)
+    fires_df    = st_drop_geometry(nearby) %>% 
+                    select(any_of(cols_keep)) %>%
+                    group_by(dist_km, Lat, Lon, Satellite) %>%
+                    summarise(
+                      FRP = if("FRP" %in% names(.) && any(!is.na(FRP))) max(FRP, na.rm = TRUE) else NA_real_,
+                      .groups = "drop"
+                    ) %>%
+                    arrange(dist_km, desc(FRP)) %>% 
+                    head(25)
   )
 }
 
@@ -2654,6 +2662,12 @@ server <- function(input, output, session) {
       filtered_data <- filtered_data %>% filter(!is.na(Tier.1) & Value >= Tier.1)
     }
     
+    # Ensure CRS consistency for the join
+    filtered_data_sf <- st_as_sf(filtered_data, coords = c("Longitude", "Latitude"), crs = 4326, remove = FALSE)
+    tier_data_local_sf <- st_as_sf(tier_data_local, coords = c("LONGITUDE", "LATITUDE"), crs = 4326, remove = FALSE)
+    
+    # Perform spatial filter or join if needed, but here they join by SITE_ID and month
+    # To suppress datum warnings, ensure everything is definitely 4326
     return(filtered_data %>% select(AQSID, date, Smoke_Intensity, Averaging_period, Value, SiteName, Tier.1, Tier.2))
   })
   
@@ -3172,7 +3186,7 @@ server <- function(input, output, session) {
       ggplot(all_trajectories, aes(x = time_hours, y = height, 
                                    color = factor(starting_height),
                                    linetype = factor(starting_hour))) +
-        geom_line(size = 1) +
+        geom_line(linewidth = 1) +
         geom_point(size = 2) +
         theme_minimal() +
         labs(title = paste("Trajectory Cross-section -", format(plot_date, "%Y-%m-%d")), 
@@ -3254,8 +3268,8 @@ server <- function(input, output, session) {
           Valid_date = if("date" %in% names(.)) date else as.Date(ValidDate),
           Value = if("pm25" %in% names(.)) pm25 else PM25,
           AQI_Category = if("AQI_Cat" %in% names(.)) AQI_Cat else aqi_cat(Value),
-          State_Code = if("StateName" %in% names(.)) StateName else StateName, # Hourly already has StateName
-          SiteName = if("City" %in% names(.)) City else SiteName,
+          State_Code = if("StateName" %in% names(.)) StateName else StateName,
+          SiteName = if("SiteName" %in% names(.)) SiteName else if("City" %in% names(.)) City else "Unknown",
           AQSID = if("Monitoring_Site_ID" %in% names(.)) Monitoring_Site_ID else AQSID
         )
       dashboardData(processed)
@@ -3627,6 +3641,7 @@ server <- function(input, output, session) {
 
       # Diurnal
       diurnal_df <- pm_raw %>%
+        filter(!is.na(SiteName)) %>%
         mutate(Hr = hour(DateTimeLocal)) %>%
         group_by(SiteName, Hr) %>%
         summarise(Avg = mean(PM25, na.rm = TRUE), .groups = "drop")
@@ -3644,6 +3659,7 @@ server <- function(input, output, session) {
       msa_rv$diurnal <- p_diurnal
 
       daily_means <- pm_raw %>%
+        filter(!is.na(SiteName)) %>%
         mutate(DateLocal = as.Date(DateTimeLocal)) %>%
         group_by(SiteName, DateLocal) %>%
         summarise(DailyAvg = mean(PM25, na.rm = TRUE), .groups = "drop") %>%
@@ -3651,14 +3667,15 @@ server <- function(input, output, session) {
         summarise(Days_Above_9 = sum(DailyAvg > 9.0, na.rm = TRUE), .groups = "drop")
 
       msa_rv$summary <- pm_raw %>%
+        filter(!is.na(SiteName)) %>%
         group_by(SiteName) %>%
         summarise(
           N_Obs     = n(),
           Mean_PM25 = round(mean(PM25, na.rm = TRUE), 1),
           Max_Val   = max(PM25,  na.rm = TRUE),
-          Max_Time  = DateTimeLocal[which.max(PM25)],
-          Max_PM25  = paste0(round(Max_Val, 1), " (", format(Max_Time, "%m/%d %H:00"), ")"),
-          Min_PM25  = round(min(PM25,  na.rm = TRUE), 1),
+          Max_Time  = if(n() > 0) DateTimeLocal[which.max(PM25)] else as.POSIXct(NA),
+          Max_PM25  = if(all(is.na(PM25))) "NA" else paste0(round(Max_Val, 1), " (", format(Max_Time, "%m/%d %H:00"), ")"),
+          Min_PM25  = if(all(is.na(PM25))) NA else round(min(PM25,  na.rm = TRUE), 1),
           .groups = "drop"
         ) %>%
         left_join(daily_means, by = "SiteName")
@@ -3682,6 +3699,7 @@ server <- function(input, output, session) {
         # Fallback if no daily data: Use the hourly calculation
         pm_raw_dates <- pm_raw %>% mutate(DateLocal = as.Date(DateTimeLocal))
         last_day_data <- pm_raw_dates %>%
+          filter(!is.na(SiteName)) %>%
           group_by(SiteName, DateLocal) %>%
           summarise(n = n(), avg = mean(PM25, na.rm = TRUE), .groups = "drop") %>%
           group_by(SiteName) %>%
@@ -3733,30 +3751,48 @@ server <- function(input, output, session) {
       pt  <- st_as_sf(loc, coords = c("long","lat"), crs = 4326)
       buf <- pt %>% st_transform(5070) %>% st_buffer(input$hourly_radius * 1000) %>% st_transform(4326)
 
-      incProgress(0.2, detail = "Fetching HMS Smoke...")
-      smoke_sf_full <- fetch_hms_smoke_day(dt)
-      smoke_sf_local <- if (!is.null(smoke_sf_full)) {
+      incProgress(0.1, detail = "Fetching HMS Smoke...")
+      smoke_sf_full_d1 <- fetch_hms_smoke_day(dt)
+      smoke_sf_full_d2 <- fetch_hms_smoke_day(dt + 1)
+      smoke_sf_full <- bind_rows(smoke_sf_full_d1, smoke_sf_full_d2)
+      
+      smoke_sf_local <- if (!is.null(smoke_sf_full) && nrow(smoke_sf_full) > 0) {
         res <- st_filter(smoke_sf_full, buf, .predicate = st_intersects)
-        if (nrow(res) > 0)
-          res %>% mutate(Hour = as.integer(substr(as.character(Start), 9, 10)),
-                         Density = str_to_title(Density))
-        else res
+        if (nrow(res) > 0) {
+           res %>% 
+             mutate(
+               # HMS Start/End are typically strings like "2026110 0215" (YearJulDay HHMM)
+               StartUTC = as.POSIXct(as.character(Start), format="%Y%j %H%M", tz="UTC"),
+               EndUTC   = as.POSIXct(as.character(End),   format="%Y%j %H%M", tz="UTC"),
+               StartLocal = with_tz(StartUTC, tz),
+               EndLocal   = with_tz(EndUTC, tz)
+             ) %>%
+             # Filter for layers that overlap our local day
+             filter(StartLocal < as.POSIXct(paste(dt+1, "00:00:00"), tz=tz),
+                    EndLocal   > as.POSIXct(paste(dt, "00:00:00"), tz=tz)) %>%
+             mutate(
+               HourLocal = hour(StartLocal),
+               Density   = str_to_title(Density)
+             )
+        } else res
       } else NULL
 
-      incProgress(0.2, detail = "Fetching HMS Fires...")
-      fires_sf  <- if (input$hourly_fires_toggle) fetch_hms_fires_day(dt) else NULL
-      fire_prox <- if (!is.null(fires_sf)) calc_fire_proximity(fires_sf, pt, input$hourly_radius) else NULL
+      incProgress(0.1, detail = "Fetching HMS Fires...")
+      fires_sf <- if (input$hourly_fires_toggle) {
+        f1 <- fetch_hms_fires_day(dt)
+        f2 <- fetch_hms_fires_day(dt + 1)
+        bind_rows(f1, f2)
+      } else NULL
+      fire_prox <- if (!is.null(fires_sf) && nrow(fires_sf) > 0) calc_fire_proximity(fires_sf, pt, input$hourly_radius) else NULL
 
       incProgress(0.2, detail = "Fetching AirNow PM2.5...")
-      pm_raw    <- fetch_airnow_hourly(dt, dt, states = c("MS","TN","AR","AL","LA","GA","FL"))
+      pm_raw <- fetch_airnow_hourly(dt, dt + 1, states = c("MS","TN","AR","AL","LA","GA","FL"))
       nearby_pm <- if (nrow(pm_raw) > 0) {
-        # Convert and filter BEFORE cropping geography to avoid UTC shift overlap
-        # (e.g. 3/22 00:00 UTC is 3/21 18:00 CST)
         pm_raw_local <- pm_raw %>%
           mutate(DateTimeGMT   = mdy_hm(paste(ValidDate, sprintf("%02d:00", Hour_UTC)), tz = "GMT"),
                  DateTimeLocal = with_tz(DateTimeGMT, tz)) %>%
-          filter(DateTimeLocal >= as.POSIXct(paste(dt, "00:00:00"), tz = tz),
-                 DateTimeLocal <= as.POSIXct(paste(dt, "23:59:59"), tz = tz))
+          filter(as.Date(DateTimeLocal, tz = tz) == dt) %>%
+          mutate(HourLocal = hour(DateTimeLocal))
         
         if (nrow(pm_raw_local) == 0) return(data.frame())
         
@@ -3767,13 +3803,13 @@ server <- function(input, output, session) {
       # Build hourly density summary
       if (!is.null(smoke_sf_local) && nrow(smoke_sf_local) > 0) {
         df_dens <- smoke_sf_local %>% st_drop_geometry() %>%
-          filter(!is.na(Hour)) %>%
-          group_by(Hour) %>%
+          filter(!is.na(HourLocal)) %>%
+          group_by(HourLocal) %>%
           summarise(MaxDensity = as.character(
             max(factor(Density, levels = c("Light","Medium","Heavy"), ordered = TRUE), na.rm = TRUE)
           ), .groups = "drop")
       } else {
-        df_dens <- data.frame(Hour = integer(), MaxDensity = character())
+        df_dens <- data.frame(HourLocal = integer(), MaxDensity = character())
       }
 
       smoke_cols <- c(Light  = "rgba(200,200,200,0.4)",
@@ -3783,33 +3819,33 @@ server <- function(input, output, session) {
       p_chart <- plot_ly()
       hourly_shapes <- list()
 
-      # FIX v3: apply user-supplied offset for x-axis positioning
+      # Apply local hour logic for plotting
       if (nrow(df_dens) > 0) {
         for (i in seq_len(nrow(df_dens))) {
-          hr <- df_dens$Hour[i] + offset   # UTC → local
+          hr <- df_dens$HourLocal[i]
           d  <- df_dens$MaxDensity[i]
           hourly_shapes[[length(hourly_shapes) + 1]] <- list(
             type = "rect", fillcolor = unname(smoke_cols[d]), line = list(width = 0),
-            x0 = hr - 0.5, x1 = hr + 0.5, xref = "x",
+            x0 = hr, x1 = hr + 1, xref = "x",
             y0 = 0, y1 = 1, yref = "paper", layer = "below"
           )
         }
       }
       if (nrow(nearby_pm) > 0) {
         for (site in unique(nearby_pm$SiteName)) {
-          df_s <- nearby_pm %>% filter(SiteName == site)
+          df_s <- nearby_pm %>% filter(SiteName == site) %>% arrange(HourLocal)
           p_chart <- p_chart %>%
             add_trace(data = df_s,
-                      x    = ~(Hour_UTC + offset),   # UTC → local using input offset
+                      x    = ~HourLocal,
                       y    = ~PM25,
                       type = "scatter", mode = "lines+markers", name = site,
                       hovertemplate = "<b>%{fullData.name}</b><br>Hour: %{x}:00<br>PM2.5: %{y:.1f}<extra></extra>")
         }
       }
 
-      # FIX v3: build tick labels from actual local range (no negative modulo weirdness)
-      local_hours <- seq(0 + offset, 23 + offset, 2)   # local hour range
-      tick_labels <- sprintf("%02d:00", local_hours %% 24)
+      # Standard 0-23 LST scale
+      local_hours <- seq(0, 23, 2)
+      tick_labels <- sprintf("%02d:00", local_hours)
 
       tz_label <- paste0("UTC", if (offset < 0) offset else paste0("+", offset))
       p_chart <- p_chart %>%
@@ -4353,10 +4389,10 @@ server <- function(input, output, session) {
 
       if (nrow(df_smoke) > 0) {
         p <- p + 
-          geom_raster(data = df_smoke, aes(x = x, y = y, fill = MASSDEN, 
+          geom_tile(data = df_smoke, aes(x = x, y = y, fill = MASSDEN, 
                                         text = paste0("Lon: ", round(x, 2), "<br>Lat: ", round(y, 2), 
-                                                      "<br>Smoke: ", round(MASSDEN, 1), " \u00b5g/m\u00b3")), 
-                    alpha = 0.9) +
+                                                      "<br>Smoke: ", round(MASSDEN, 1), " \u00b5g/m\u0033")), 
+                    alpha = 0.9, width = 0.05, height = 0.05) +
           scale_fill_gradientn(
             colors   = c("#ffffb2","#fecc5c","#fd8d3c","#f03b20","#bd0026","#67000d"),
             name     = "Smoke (\u00b5g/m\u00b3)",

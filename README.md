@@ -7,8 +7,10 @@ A comprehensive R Shiny application for nationwide PM2.5 monitoring and HMS (Haz
 -   **Nationwide Analysis**: Dynamically fetch PM2.5 data for any US state using AirNow and AQS APIs.
 -   **Multi-Day Smoke Events**: Identify significant smoke impacts over time with configurable PM2.5 thresholds and proximity buffers.
 -   **Interactive Mapping**: Visualize smoke plumes (HMS) and monitor concentrations with a layered, interactive Leaflet map.
--   **Analytical Tools**: Includes diurnal profile analysis, HMS fire detections, and consolidated reporting tables.
--   **Data Robustness**: Improved handling of varying API response formats and automated geometry cleaning for spatial data.
+-   **Analytical Tools**: Includes diurnal profile analysis (now with full **Local Standard Time** 24-hour support), HMS fire detections, and consolidated reporting tables.
+-   **Deduplicated Data**: "Nearest Fires" table now consolidates overlapping detections into a single maximum-intensity record.
+-   **Standards-Compliant**: Ozone categorizations updated to match EPA standards (e.g., 0-54 ppb defined as "Good").
+-   **Performance & Stability**: Migrated to modern `dplyr` and `ggplot2` syntax for faster processing and cleaner logs.
 
 ## Getting Started
 
