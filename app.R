@@ -3527,7 +3527,7 @@ server <- function(input, output, session) {
       msa_start <- min(input$msa_dates)
       msa_end   <- max(input$msa_dates)
       states    <- if (!is.null(cfg$state_code)) cfg$state_code else NULL
-      pm_raw    <- fetch_airnow_hourly(msa_start, msa_end, states = states)
+      pm_raw    <- fetch_airnow_hourly(msa_start, msa_end + 1, states = states)
       if (nrow(pm_raw) == 0) { showNotification("No AirNow data found.", type = "error"); return() }
 
       setProgress(0.2, detail = "Fetching Official Daily Averages...")
@@ -3554,7 +3554,7 @@ server <- function(input, output, session) {
       smoke_sf <- NULL
       if (input$msa_smoke_overlay == "y") {
         setProgress(0.4, detail = "Fetching HMS Smoke...")
-        smoke_days <- seq(msa_start, msa_end, by = "day")
+        smoke_days <- seq(msa_start, msa_end + 1, by = "day")
         smoke_list <- lapply(smoke_days, function(d) {
           s <- fetch_hms_smoke_day(d)
           if (!is.null(s) && nrow(s) > 0) {
@@ -4249,13 +4249,17 @@ server <- function(input, output, session) {
       pt_coords <- st_coordinates(pt)
       sl_rv$pt <- pt
 
-      incProgress(0.2, detail = "Fetching HMS Fires...")
-      fires_sf       <- fetch_hms_fires_day(input$sl_date)
+      incProgress(0.1, detail = "Fetching HMS Fires...")
+      f1_sl <- fetch_hms_fires_day(input$sl_date)
+      f2_sl <- fetch_hms_fires_day(input$sl_date + 1)
+      fires_sf <- bind_rows(f1_sl, f2_sl)
       sl_rv$fires_sf <- fires_sf
-      sl_rv$fire_prox <- calc_fire_proximity(fires_sf, pt, input$sl_radius)
+      sl_rv$fire_prox <- if (!is.null(fires_sf) && nrow(fires_sf) > 0) calc_fire_proximity(fires_sf, pt, input$sl_radius) else NULL
 
-      incProgress(0.2, detail = "Fetching HMS Smoke...")
-      smoke_sf  <- fetch_hms_smoke_day(input$sl_date)
+      incProgress(0.1, detail = "Fetching HMS Smoke...")
+      s1_sl <- fetch_hms_smoke_day(input$sl_date)
+      s2_sl <- fetch_hms_smoke_day(input$sl_date + 1)
+      smoke_sf <- bind_rows(s1_sl, s2_sl)
       # Store full national smoke for the map display (same coverage as Tab 4)
       sl_rv$smoke_sf <- smoke_sf
       # Separately clip to a small buffer around the monitor for the assessment text
@@ -4267,9 +4271,9 @@ server <- function(input, output, session) {
       else
         NULL
 
-      incProgress(0.15, detail = "Fetching nearby AirNow hourly...")
+      incProgress(0.1, detail = "Fetching nearby AirNow hourly...")
       buf_pm  <- pt %>% st_transform(5070) %>% st_buffer(100 * 1000) %>% st_transform(4326)
-      pm_raw  <- fetch_airnow_hourly(input$sl_date, input$sl_date)
+      pm_raw  <- fetch_airnow_hourly(input$sl_date, input$sl_date + 1)
       if (nrow(pm_raw) > 0) {
         # Apply local filtering to avoid UTC-shift artifacts
         tz_sl <- get_olson_tz(as.integer(input$sl_gmt_offset))
