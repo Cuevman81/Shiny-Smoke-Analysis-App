@@ -2640,7 +2640,7 @@ server <- function(input, output, session) {
     
     # 2. Return early if no tier filter needed
     if (input$tierFilter == "none") {
-      return(combined_data %>% select(AQSID, date, Smoke_Intensity, Averaging_period, Value, SiteName))
+      return(combined_data %>% select(AQSID, date, Smoke_Intensity, Averaging_period, Value, SiteName, Latitude, Longitude))
     }
     
     # 3. Get and Check Tier Data
@@ -2648,7 +2648,7 @@ server <- function(input, output, session) {
     
     if (is.null(tier_data_local) || !all(c("Tier.1", "Tier.2") %in% names(tier_data_local))) {
       showNotification("Tiering data unavailable. Returning unfiltered data.", type = "warning")
-      return(combined_data %>% select(AQSID, date, Smoke_Intensity, Averaging_period, Value, SiteName))
+      return(combined_data %>% select(AQSID, date, Smoke_Intensity, Averaging_period, Value, SiteName, Latitude, Longitude))
     }
     
     # 4. Join and Filter
@@ -2662,20 +2662,18 @@ server <- function(input, output, session) {
       filtered_data <- filtered_data %>% filter(!is.na(Tier.1) & Value >= Tier.1)
     }
     
-    # Ensure CRS consistency for the join
-    filtered_data_sf <- st_as_sf(filtered_data, coords = c("Longitude", "Latitude"), crs = 4326, remove = FALSE)
-    tier_data_local_sf <- st_as_sf(tier_data_local, coords = c("LONGITUDE", "LATITUDE"), crs = 4326, remove = FALSE)
     
-    # Perform spatial filter or join if needed, but here they join by SITE_ID and month
-    # To suppress datum warnings, ensure everything is definitely 4326
-    return(filtered_data %>% select(AQSID, date, Smoke_Intensity, Averaging_period, Value, SiteName, Tier.1, Tier.2))
+    # 5. Return results
+    return(filtered_data %>% select(AQSID, date, Smoke_Intensity, Averaging_period, Value, SiteName, Tier.1, Tier.2, Latitude, Longitude))
+
   })
   
   output$filteredDataTable <- renderDT({
     req(filteredData())
     
     data_to_display <- filteredData() %>%
-      mutate(date = format(date, "%Y-%m-%d"))
+      mutate(date = format(date, "%Y-%m-%d")) %>%
+      select(-any_of(c("Latitude", "Longitude")))
     
     # Check which columns are available
     available_columns <- names(data_to_display)
@@ -2755,6 +2753,10 @@ server <- function(input, output, session) {
       state_sf <- clean_geometry(state_sf)
       state_sf_transformed(sf::st_transform(state_sf, 4326))
       
+      # Filter out sites with missing coordinates before spatial conversion
+      state_pm25_data <- state_pm25_data %>%
+        filter(!is.na(Latitude), !is.na(Longitude))
+        
       sites_sf <- st_as_sf(state_pm25_data, coords = c("Longitude", "Latitude"), crs = 4326)
       
       dates <- seq.Date(input$dateRange[1], input$dateRange[2], by = "day")
@@ -2773,7 +2775,7 @@ server <- function(input, output, session) {
       }
       
       pm25_join <- state_pm25_data %>%
-        select(AQSID, Valid_date, Averaging_period, Value, SiteName) %>%
+        select(AQSID, Valid_date, Averaging_period, Value, SiteName, Latitude, Longitude) %>%
         distinct()
       
       combined_data <- all_data %>%
