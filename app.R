@@ -19,6 +19,9 @@
 # ============================================================
 # 1. PACKAGES
 # ============================================================
+# Consolidated package loading for local execution and rsconnect deployment.
+# Packages are explicitly listed here so that the rsconnect dependency scanner
+# can identify and bundle them during deployment.
 suppressPackageStartupMessages({
   library(shiny)
   library(bslib)
@@ -54,12 +57,44 @@ suppressPackageStartupMessages({
   library(shinyjs)
   library(splitr)
   library(furrr)
+  library(lwgeom)
+  library(png)
+  library(magick)
+  library(gridExtra)
+  library(grid)
+  library(mapdata)
+  library(memoise)
+  library(foreach)
+  library(doParallel)
+  library(future)
+  library(rvest)
+  library(openxlsx)
+  library(promises)
 })
 
 # Optional/system-dependent packages
 if (requireNamespace("terra", quietly = TRUE)) suppressPackageStartupMessages(library(terra))
 
 options(tigris_use_cache = TRUE, shiny.maxRequestSize = 50 * 1024^2)
+
+# ============================================================
+# DEBUGGING LOG CONFIGURATION
+# ============================================================
+DEBUG <- FALSE
+
+log_debug <- function(..., is_str = FALSE, obj = NULL) {
+  if (DEBUG) {
+    if (!is.null(obj)) {
+      if (is_str) {
+        utils::str(obj)
+      } else {
+        print(obj)
+      }
+    } else {
+      message(paste0("[DEBUG] ", paste(...)))
+    }
+  }
+}
 
 # ============================================================
 # 2. CREDENTIALS  (set env vars to avoid plaintext in source)
@@ -70,99 +105,110 @@ AQS_KEY_DEFAULT   <- Sys.getenv("AQS_KEY",   "")
 # ============================================================
 # 3. NATIONWIDE MSA DEFINITIONS
 # ============================================================
-msa_definitions <- list(
-  "Albuquerque, NM"        = list(name="Albuquerque, NM MSA",           name_short="Albuquerque",  state_code="NM",            bbox_coords=c(xmin=-106.9,ymin=34.8,xmax=-106.3,ymax=35.4), gmt_offset=-7),
-  "Atlanta, GA"            = list(name="Atlanta-Sandy Springs, GA MSA", name_short="Atlanta",      state_code="GA",            bbox_coords=c(xmin=-84.9,ymin=33.4,xmax=-84.0,ymax=34.2), gmt_offset=-5),
-  "Austin, TX"             = list(name="Austin-Round Rock, TX MSA",     name_short="Austin",       state_code="TX",            bbox_coords=c(xmin=-98.0,ymin=30.1,xmax=-97.4,ymax=30.6), gmt_offset=-6),
-  "Baltimore, MD"          = list(name="Baltimore-Columbia-Towson, MD", name_short="Baltimore",    state_code="MD",            bbox_coords=c(xmin=-77.0,ymin=39.0,xmax=-76.2,ymax=39.6), gmt_offset=-5),
-  "Baton Rouge, LA"        = list(name="Baton Rouge, LA MSA",           name_short="BatonRouge",   state_code="LA",            bbox_coords=c(xmin=-91.5,ymin=30.1,xmax=-90.7,ymax=30.8), gmt_offset=-6),
-  "Birmingham, AL"         = list(name="Birmingham-Hoover, AL MSA",     name_short="Birmingham",   state_code="AL",            bbox_coords=c(xmin=-87.4,ymin=33.2,xmax=-86.4,ymax=33.9), gmt_offset=-6),
-  "Boston, MA"             = list(name="Boston-Cambridge, MA MSA",      name_short="Boston",       state_code="MA",            bbox_coords=c(xmin=-71.3,ymin=42.2,xmax=-70.8,ymax=42.6), gmt_offset=-5),
-  "Charlotte, NC-SC"       = list(name="Charlotte-Concord, NC-SC MSA",  name_short="Charlotte",    state_code=c("NC","SC"),    bbox_coords=c(xmin=-81.2,ymin=35.0,xmax=-80.5,ymax=35.6), gmt_offset=-5),
-  "Chattanooga, TN-GA"     = list(name="Chattanooga, TN-GA MSA",        name_short="Chattanooga",  state_code=c("TN","GA"),    bbox_coords=c(xmin=-85.5,ymin=34.8,xmax=-85.0,ymax=35.2), gmt_offset=-5),
-  "Chicago, IL"            = list(name="Chicago-Naperville, IL-IN-WI",  name_short="Chicago",      state_code=c("IL","IN","WI"),bbox_coords=c(xmin=-88.3,ymin=41.5,xmax=-87.4,ymax=42.2), gmt_offset=-6),
-  "Cincinnati, OH-KY-IN"   = list(name="Cincinnati, OH-KY-IN MSA",      name_short="Cincinnati",   state_code=c("OH","KY","IN"),bbox_coords=c(xmin=-84.8,ymin=38.8,xmax=-84.0,ymax=39.5), gmt_offset=-5),
-  "Cleveland, OH"          = list(name="Cleveland-Elyria, OH MSA",      name_short="Cleveland",    state_code="OH",            bbox_coords=c(xmin=-82.1,ymin=41.2,xmax=-81.3,ymax=41.8), gmt_offset=-5),
-  "Columbus, OH"           = list(name="Columbus, OH MSA",              name_short="Columbus",     state_code="OH",            bbox_coords=c(xmin=-83.3,ymin=39.8,xmax=-82.6,ymax=40.2), gmt_offset=-5),
-  "Dallas-Fort Worth, TX"  = list(name="Dallas-Fort Worth, TX MSA",     name_short="DFW",          state_code="TX",            bbox_coords=c(xmin=-97.6,ymin=32.5,xmax=-96.5,ymax=33.3), gmt_offset=-6),
-  "Denver, CO"             = list(name="Denver-Aurora, CO MSA",         name_short="Denver",       state_code="CO",            bbox_coords=c(xmin=-105.2,ymin=39.5,xmax=-104.5,ymax=40.0), gmt_offset=-7),
-  "Detroit, MI"            = list(name="Detroit-Warren-Dearborn, MI",   name_short="Detroit",      state_code="MI",            bbox_coords=c(xmin=-83.4,ymin=42.1,xmax=-82.7,ymax=42.6), gmt_offset=-5),
-  "El Paso, TX"            = list(name="El Paso, TX MSA",               name_short="ElPaso",       state_code="TX",            bbox_coords=c(xmin=-106.9,ymin=31.5,xmax=-106.2,ymax=32.0), gmt_offset=-7),
-  "Gulfport-Biloxi, MS"    = list(name="Gulfport-Biloxi, MS MSA",       name_short="MSCoast",      state_code="MS",            bbox_coords=c(xmin=-89.7,ymin=30.0,xmax=-88.3,ymax=30.8), gmt_offset=-6),
-  "Houston, TX"            = list(name="Houston-The Woodlands, TX MSA", name_short="Houston",      state_code="TX",            bbox_coords=c(xmin=-95.9,ymin=29.5,xmax=-95.0,ymax=30.1), gmt_offset=-6),
-  "Huntsville, AL"         = list(name="Huntsville, AL MSA",            name_short="Huntsville",   state_code="AL",            bbox_coords=c(xmin=-86.8,ymin=34.4,xmax=-85.9,ymax=35.0), gmt_offset=-6),
-  "Indianapolis, IN"       = list(name="Indianapolis-Carmel, IN MSA",   name_short="Indianapolis", state_code="IN",            bbox_coords=c(xmin=-86.5,ymin=39.5,xmax=-85.7,ymax=40.1), gmt_offset=-5),
-  "Jackson, MS"            = list(name="Jackson, MS MSA",               name_short="JacksonMS",    state_code="MS",            target_aqsids=c("280490020","280490021"), bbox_coords=c(xmin=-90.5,ymin=32.0,xmax=-89.8,ymax=32.6), gmt_offset=-6),
-  "Jacksonville, FL"       = list(name="Jacksonville, FL MSA",          name_short="Jacksonville", state_code="FL",            bbox_coords=c(xmin=-82.0,ymin=30.0,xmax=-81.3,ymax=30.6), gmt_offset=-5),
-  "Kansas City, MO-KS"     = list(name="Kansas City, MO-KS MSA",        name_short="KansasCity",   state_code=c("MO","KS"),    bbox_coords=c(xmin=-94.8,ymin=38.8,xmax=-94.2,ymax=39.3), gmt_offset=-6),
-  "Knoxville, TN"          = list(name="Knoxville, TN MSA",             name_short="Knoxville",    state_code="TN",            bbox_coords=c(xmin=-84.4,ymin=35.7,xmax=-83.6,ymax=36.3), gmt_offset=-5),
-  "Las Vegas, NV"          = list(name="Las Vegas-Henderson, NV MSA",   name_short="LasVegas",     state_code="NV",            bbox_coords=c(xmin=-115.5,ymin=36.0,xmax=-114.8,ymax=36.5), gmt_offset=-8),
-  "Little Rock, AR"        = list(name="Little Rock, AR MSA",           name_short="LittleRock",   state_code="AR",            bbox_coords=c(xmin=-92.7,ymin=34.5,xmax=-91.9,ymax=35.1), gmt_offset=-6),
-  "Los Angeles, CA"        = list(name="Los Angeles-Long Beach, CA MSA",name_short="LosAngeles",   state_code="CA",            bbox_coords=c(xmin=-118.8,ymin=33.7,xmax=-117.8,ymax=34.4), gmt_offset=-8),
-  "Memphis, TN-MS-AR"      = list(name="Memphis, TN-MS-AR MSA",         name_short="Memphis",      state_code=c("TN","MS","AR"),bbox_coords=c(xmin=-90.4,ymin=34.7,xmax=-89.6,ymax=35.5), gmt_offset=-6),
-  "Miami, FL"              = list(name="Miami-Fort Lauderdale, FL MSA", name_short="Miami",        state_code="FL",            bbox_coords=c(xmin=-80.6,ymin=25.5,xmax=-80.0,ymax=26.3), gmt_offset=-5),
-  "Milwaukee, WI"          = list(name="Milwaukee-Waukesha, WI MSA",    name_short="Milwaukee",    state_code="WI",            bbox_coords=c(xmin=-88.3,ymin=42.7,xmax=-87.7,ymax=43.2), gmt_offset=-6),
-  "Minneapolis, MN-WI"     = list(name="Minneapolis-St. Paul, MN-WI",   name_short="Minneapolis",  state_code=c("MN","WI"),    bbox_coords=c(xmin=-93.7,ymin=44.7,xmax=-93.0,ymax=45.2), gmt_offset=-6),
-  "Mobile, AL"             = list(name="Mobile, AL MSA",                name_short="Mobile",       state_code="AL",            bbox_coords=c(xmin=-88.5,ymin=30.5,xmax=-87.7,ymax=31.0), gmt_offset=-6),
-  "Nashville, TN"          = list(name="Nashville-Davidson, TN MSA",    name_short="Nashville",    state_code="TN",            bbox_coords=c(xmin=-87.2,ymin=35.9,xmax=-86.4,ymax=36.6), gmt_offset=-6),
-  "New Orleans, LA"        = list(name="New Orleans-Metairie, LA MSA",  name_short="NewOrleans",   state_code="LA",            bbox_coords=c(xmin=-90.5,ymin=29.7,xmax=-89.5,ymax=30.3), gmt_offset=-6),
-  "New York, NY"           = list(name="New York-Newark, NY-NJ-CT MSA", name_short="NewYork",      state_code=c("NY","NJ","CT"),bbox_coords=c(xmin=-74.3,ymin=40.5,xmax=-73.7,ymax=41.0), gmt_offset=-5),
-  "Oklahoma City, OK"      = list(name="Oklahoma City, OK MSA",         name_short="OKC",          state_code="OK",            bbox_coords=c(xmin=-97.8,ymin=35.3,xmax=-97.2,ymax=35.7), gmt_offset=-6),
-  "Orlando, FL"            = list(name="Orlando-Kissimmee, FL MSA",     name_short="Orlando",      state_code="FL",            bbox_coords=c(xmin=-81.8,ymin=28.2,xmax=-81.0,ymax=28.9), gmt_offset=-5),
-  "Philadelphia, PA-NJ"    = list(name="Philadelphia-Camden, PA-NJ MSA",name_short="Philadelphia", state_code=c("PA","NJ"),    bbox_coords=c(xmin=-75.4,ymin=39.8,xmax=-74.8,ymax=40.2), gmt_offset=-5),
-  "Phoenix, AZ"            = list(name="Phoenix-Mesa, AZ MSA",          name_short="Phoenix",      state_code="AZ",            bbox_coords=c(xmin=-112.5,ymin=33.2,xmax=-111.7,ymax=33.8), gmt_offset=-7),
-  "Pittsburgh, PA"         = list(name="Pittsburgh, PA MSA",            name_short="Pittsburgh",   state_code="PA",            bbox_coords=c(xmin=-80.2,ymin=40.2,xmax=-79.8,ymax=40.6), gmt_offset=-5),
-  "Portland, OR-WA"        = list(name="Portland-Vancouver, OR-WA MSA", name_short="Portland",     state_code=c("OR","WA"),    bbox_coords=c(xmin=-122.9,ymin=45.3,xmax=-122.3,ymax=45.7), gmt_offset=-8),
-  "Raleigh, NC"            = list(name="Raleigh-Cary, NC MSA",          name_short="Raleigh",      state_code="NC",            bbox_coords=c(xmin=-79.0,ymin=35.6,xmax=-78.4,ymax=36.1), gmt_offset=-5),
-  "Richmond, VA"           = list(name="Richmond, VA MSA",              name_short="Richmond",     state_code="VA",            bbox_coords=c(xmin=-77.9,ymin=37.2,xmax=-77.2,ymax=37.7), gmt_offset=-5),
-  "Sacramento, CA"         = list(name="Sacramento-Roseville, CA MSA",  name_short="Sacramento",   state_code="CA",            bbox_coords=c(xmin=-121.8,ymin=38.3,xmax=-121.0,ymax=38.8), gmt_offset=-8),
-  "Salt Lake City, UT"     = list(name="Salt Lake City, UT MSA",        name_short="SaltLake",     state_code="UT",            bbox_coords=c(xmin=-112.2,ymin=40.4,xmax=-111.6,ymax=41.0), gmt_offset=-7),
-  "San Antonio, TX"        = list(name="San Antonio, TX MSA",           name_short="SanAntonio",   state_code="TX",            bbox_coords=c(xmin=-98.8,ymin=29.2,xmax=-98.0,ymax=29.8), gmt_offset=-6),
-  "San Diego, CA"          = list(name="San Diego-Carlsbad, CA MSA",    name_short="SanDiego",     state_code="CA",            bbox_coords=c(xmin=-117.6,ymin=32.5,xmax=-116.5,ymax=33.5), gmt_offset=-8),
-  "San Francisco, CA"      = list(name="San Francisco-Oakland, CA MSA", name_short="SanFrancisco", state_code="CA",            bbox_coords=c(xmin=-122.6,ymin=37.5,xmax=-121.9,ymax=38.0), gmt_offset=-8),
-  "Savannah, GA"           = list(name="Savannah, GA MSA",              name_short="Savannah",     state_code="GA",            bbox_coords=c(xmin=-81.3,ymin=31.9,xmax=-80.8,ymax=32.2), gmt_offset=-5),
-  "Seattle, WA"            = list(name="Seattle-Tacoma-Bellevue, WA",   name_short="Seattle",      state_code="WA",            bbox_coords=c(xmin=-122.6,ymin=47.3,xmax=-121.9,ymax=47.8), gmt_offset=-8),
-  "Shreveport, LA"         = list(name="Shreveport-Bossier City, LA",   name_short="Shreveport",   state_code="LA",            bbox_coords=c(xmin=-94.2,ymin=32.3,xmax=-93.5,ymax=32.8), gmt_offset=-6),
-  "St. Louis, MO-IL"       = list(name="St. Louis, MO-IL MSA",          name_short="StLouis",      state_code=c("MO","IL"),    bbox_coords=c(xmin=-90.7,ymin=38.4,xmax=-90.0,ymax=38.9), gmt_offset=-6),
-  "Tampa, FL"              = list(name="Tampa-St. Petersburg, FL MSA",  name_short="Tampa",        state_code="FL",            bbox_coords=c(xmin=-82.8,ymin=27.7,xmax=-82.1,ymax=28.2), gmt_offset=-5),
-  "Tucson, AZ"             = list(name="Tucson, AZ MSA",                name_short="Tucson",       state_code="AZ",            bbox_coords=c(xmin=-111.1,ymin=32.1,xmax=-110.6,ymax=32.5), gmt_offset=-7),
-  "Tulsa, OK"              = list(name="Tulsa, OK MSA",                 name_short="Tulsa",        state_code="OK",            bbox_coords=c(xmin=-96.2,ymin=35.9,xmax=-95.7,ymax=36.3), gmt_offset=-6),
-  "Washington, DC"         = list(name="Washington-Arlington DC-VA-MD", name_short="WashDC",       state_code=c("DC","VA","MD"),bbox_coords=c(xmin=-77.5,ymin=38.6,xmax=-76.8,ymax=39.1), gmt_offset=-5),
-  "-- Custom Location --"  = list(name="Custom Location",               name_short="Custom",       state_code=NULL,            bbox_coords=NULL, gmt_offset=-6)
-)
+# Load or generate MSA definitions from CSV
+msa_csv_path <- "msa_definitions.csv"
+if (!file.exists(msa_csv_path)) {
+  # Auto-generate default CSV if missing
+  default_csv_content <- paste0(
+    "msa_key,name,name_short,state_code,xmin,ymin,xmax,ymax,gmt_offset,target_aqsids\n",
+    "\"Albuquerque, NM\",\"Albuquerque, NM MSA\",\"Albuquerque\",\"NM\",-106.9,34.8,-106.3,35.4,-7,\n",
+    "\"Atlanta, GA\",\"Atlanta-Sandy Springs, GA MSA\",\"Atlanta\",\"GA\",-84.9,33.4,-84,34.2,-5,\n",
+    "\"Austin, TX\",\"Austin-Round Rock, TX MSA\",\"Austin\",\"TX\",-98,30.1,-97.4,30.6,-6,\n",
+    "\"Baltimore, MD\",\"Baltimore-Columbia-Towson, MD\",\"Baltimore\",\"MD\",-77,39,-76.2,39.6,-5,\n",
+    "\"Baton Rouge, LA\",\"Baton Rouge, LA MSA\",\"BatonRouge\",\"LA\",-91.5,30.1,-90.7,30.8,-6,\n",
+    "\"Birmingham, AL\",\"Birmingham-Hoover, AL MSA\",\"Birmingham\",\"AL\",-87.4,33.2,-86.4,33.9,-6,\n",
+    "\"Boston, MA\",\"Boston-Cambridge, MA MSA\",\"Boston\",\"MA\",-71.3,42.2,-70.8,42.6,-5,\n",
+    "\"Charlotte, NC-SC\",\"Charlotte-Concord, NC-SC MSA\",\"Charlotte\",\"NC;SC\",-81.2,35,-80.5,35.6,-5,\n",
+    "\"Chattanooga, TN-GA\",\"Chattanooga, TN-GA MSA\",\"Chattanooga\",\"TN;GA\",-85.5,34.8,-85,35.2,-5,\n",
+    "\"Chicago, IL\",\"Chicago-Naperville, IL-IN-WI\",\"Chicago\",\"IL;IN;WI\",-88.3,41.5,-87.4,42.2,-6,\n",
+    "\"Cincinnati, OH-KY-IN\",\"Cincinnati, OH-KY-IN MSA\",\"Cincinnati\",\"OH;KY;IN\",-84.8,38.8,-84,39.5,-5,\n",
+    "\"Cleveland, OH\",\"Cleveland-Elyria, OH MSA\",\"Cleveland\",\"OH\",-82.1,41.2,-81.3,41.8,-5,\n",
+    "\"Columbus, OH\",\"Columbus, OH MSA\",\"Columbus\",\"OH\",-83.3,39.8,-82.6,40.2,-5,\n",
+    "\"Dallas-Fort Worth, TX\",\"Dallas-Fort Worth, TX MSA\",\"DFW\",\"TX\",-97.6,32.5,-96.5,33.3,-6,\n",
+    "\"Denver, CO\",\"Denver-Aurora, CO MSA\",\"Denver\",\"CO\",-105.2,39.5,-104.5,40,-7,\n",
+    "\"Detroit, MI\",\"Detroit-Warren-Dearborn, MI\",\"Detroit\",\"MI\",-83.4,42.1,-82.7,42.6,-5,\n",
+    "\"El Paso, TX\",\"El Paso, TX MSA\",\"ElPaso\",\"TX\",-106.9,31.5,-106.2,32,-7,\n",
+    "\"Gulfport-Biloxi, MS\",\"Gulfport-Biloxi, MS MSA\",\"MSCoast\",\"MS\",-89.7,30,-88.3,30.8,-6,\n",
+    "\"Houston, TX\",\"Houston-The Woodlands, TX MSA\",\"Houston\",\"TX\",-95.9,29.5,-95,30.1,-6,\n",
+    "\"Huntsville, AL\",\"Huntsville, AL MSA\",\"Huntsville\",\"AL\",-86.8,34.4,-85.9,35,-6,\n",
+    "\"Indianapolis, IN\",\"Indianapolis-Carmel, IN MSA\",\"Indianapolis\",\"IN\",-86.5,39.5,-85.7,40.1,-5,\n",
+    "\"Jackson, MS\",\"Jackson, MS MSA\",\"JacksonMS\",\"MS\",-90.5,32,-89.8,32.6,-6,\"280490020;280490021\"\n",
+    "\"Jacksonville, FL\",\"Jacksonville, FL MSA\",\"Jacksonville\",\"FL\",-82,30,-81.3,30.6,-5,\n",
+    "\"Kansas City, MO-KS\",\"Kansas City, MO-KS MSA\",\"KansasCity\",\"MO;KS\",-94.8,38.8,-94.2,39.3,-6,\n",
+    "\"Knoxville, TN\",\"Knoxville, TN MSA\",\"Knoxville\",\"TN\",-84.4,35.7,-83.6,36.3,-5,\n",
+    "\"Las Vegas, NV\",\"Las Vegas-Henderson, NV MSA\",\"LasVegas\",\"NV\",-115.5,36,-114.8,36.5,-8,\n",
+    "\"Little Rock, AR\",\"Little Rock, AR MSA\",\"LittleRock\",\"AR\",-92.7,34.5,-91.9,35.1,-6,\n",
+    "\"Los Angeles, CA\",\"Los Angeles-Long Beach, CA MSA\",\"LosAngeles\",\"CA\",-118.8,33.7,-117.8,34.4,-8,\n",
+    "\"Memphis, TN-MS-AR\",\"Memphis, TN-MS-AR MSA\",\"Memphis\",\"TN;MS;AR\",-90.4,34.7,-89.6,35.5,-6,\n",
+    "\"Miami, FL\",\"Miami-Fort Lauderdale, FL MSA\",\"Miami\",\"FL\",-80.6,25.5,-80,26.3,-5,\n",
+    "\"Milwaukee, WI\",\"Milwaukee-Waukesha, WI MSA\",\"Milwaukee\",\"WI\",-88.3,42.7,-87.7,43.2,-6,\n",
+    "\"Minneapolis, MN-WI\",\"Minneapolis-St. Paul, MN-WI\",\"Minneapolis\",\"MN;WI\",-93.7,44.7,-93,45.2,-6,\n",
+    "\"Mobile, AL\",\"Mobile, AL MSA\",\"Mobile\",\"AL\",-88.5,30.5,-87.7,31,-6,\n",
+    "\"Nashville, TN\",\"Nashville-Davidson, TN MSA\",\"Nashville\",\"TN\",-87.2,35.9,-86.4,36.6,-6,\n",
+    "\"New Orleans, LA\",\"New Orleans-Metairie, LA MSA\",\"NewOrleans\",\"LA\",-90.5,29.7,-89.5,30.3,-6,\n",
+    "\"New York, NY\",\"New York-Newark, NY-NJ-CT MSA\",\"NewYork\",\"NY;NJ;CT\",-74.3,40.5,-73.7,41,-5,\n",
+    "\"Oklahoma City, OK\",\"Oklahoma City, OK MSA\",\"OKC\",\"OK\",-97.8,35.3,-97.2,35.7,-6,\n",
+    "\"Orlando, FL\",\"Orlando-Kissimmee, FL MSA\",\"Orlando\",\"FL\",-81.8,28.2,-81,28.9,-5,\n",
+    "\"Philadelphia, PA-NJ\",\"Philadelphia-Camden, PA-NJ MSA\",\"Philadelphia\",\"PA;NJ\",-75.4,39.8,-74.8,40.2,-5,\n",
+    "\"Phoenix, AZ\",\"Phoenix-Mesa, AZ MSA\",\"Phoenix\",\"AZ\",-112.5,33.2,-111.7,33.8,-7,\n",
+    "\"Pittsburgh, PA\",\"Pittsburgh, PA MSA\",\"Pittsburgh\",\"PA\",-80.2,40.2,-79.8,40.6,-5,\n",
+    "\"Portland, OR-WA\",\"Portland-Vancouver, OR-WA MSA\",\"Portland\",\"OR;WA\",-122.9,45.3,-122.3,45.7,-8,\n",
+    "\"Raleigh, NC\",\"Raleigh-Cary, NC MSA\",\"Raleigh\",\"NC\",-79,35.6,-78.4,36.1,-5,\n",
+    "\"Richmond, VA\",\"Richmond, VA MSA\",\"Richmond\",\"VA\",-77.9,37.2,-77.2,37.7,-5,\n",
+    "\"Sacramento, CA\",\"Sacramento-Roseville, CA MSA\",\"Sacramento\",\"CA\",-121.8,38.3,-121,38.8,-8,\n",
+    "\"Salt Lake City, UT\",\"Salt Lake City, UT MSA\",\"SaltLake\",\"UT\",-112.2,40.4,-111.6,41,-7,\n",
+    "\"San Antonio, TX\",\"San Antonio, TX MSA\",\"SanAntonio\",\"TX\",-98.8,29.2,-98,29.8,-6,\n",
+    "\"San Diego, CA\",\"San Diego-Carlsbad, CA MSA\",\"SanDiego\",\"CA\",-117.6,32.5,-116.5,33.5,-8,\n",
+    "\"San Francisco, CA\",\"San Francisco-Oakland, CA MSA\",\"SanFrancisco\",\"CA\",-122.6,37.5,-121.9,38,-8,\n",
+    "\"Savannah, GA\",\"Savannah, GA MSA\",\"Savannah\",\"GA\",-81.3,31.9,-80.8,32.2,-5,\n",
+    "\"Seattle, WA\",\"Seattle-Tacoma-Bellevue, WA\",\"Seattle\",\"WA\",-122.6,47.3,-121.9,47.8,-8,\n",
+    "\"Shreveport, LA\",\"Shreveport-Bossier City, LA\",\"Shreveport\",\"LA\",-94.2,32.3,-93.5,32.8,-6,\n",
+    "\"St. Louis, MO-IL\",\"St. Louis, MO-IL MSA\",\"StLouis\",\"MO;IL\",-90.7,38.4,-90,38.9,-6,\n",
+    "\"Tampa, FL\",\"Tampa-St. Petersburg, FL MSA\",\"Tampa\",\"FL\",-82.8,27.7,-82.1,28.2,-5,\n",
+    "\"Tucson, AZ\",\"Tucson, AZ MSA\",\"Tucson\",\"AZ\",-111.1,32.1,-110.6,32.5,-7,\n",
+    "\"Tulsa, OK\",\"Tulsa, OK MSA\",\"Tulsa\",\"OK\",-96.2,35.9,-95.7,36.3,-6,\n",
+    "\"Washington, DC\",\"Washington-Arlington DC-VA-MD\",\"WashDC\",\"DC;VA;MD\",-77.5,38.6,-76.8,39.1,-5,\n",
+    "\"-- Custom Location --\",\"Custom Location\",\"Custom\",,,,-6,\n"
+  )
+  writeLines(default_csv_content, msa_csv_path)
+}
 
-# ============================================================
-library(shiny)
-library(dplyr)
-library(readr)
-library(sf)
-library(maps)
-library(ggplot2)
-library(lubridate)
-library(DT)
-library(lwgeom)
-library(httr)
-library(png)
-library(magick)
-library(gridExtra)
-library(grid)
-library(mapdata)
-library(splitr)
-library(ggrepel)
-library(purrr)
-library(memoise)
-library(foreach)
-library(doParallel)
-library(furrr)
-library(future)
-library(rvest)
-library(stringr)
-library(shinyjs)
-library(openxlsx)
-library(shinycssloaders)
-library(promises)
-library(leaflet)
-library(tigris) 
+msa_df <- read.csv(msa_csv_path, stringsAsFactors = FALSE)
+msa_definitions <- list()
+for (i in 1:nrow(msa_df)) {
+  row <- msa_df[i, ]
+  key <- row$msa_key
+  
+  # Parse state_code (semicolon-separated)
+  s_code <- if (is.na(row$state_code) || row$state_code == "") {
+    NULL
+  } else {
+    strsplit(row$state_code, ";")[[1]]
+  }
+  
+  # Parse bbox_coords
+  bbox <- if (is.na(row$xmin) || is.na(row$ymin) || is.na(row$xmax) || is.na(row$ymax)) {
+    NULL
+  } else {
+    c(xmin = row$xmin, ymin = row$ymin, xmax = row$xmax, ymax = row$ymax)
+  }
+  
+  # Parse target_aqsids
+  aqsids <- if (is.na(row$target_aqsids) || row$target_aqsids == "") {
+    NULL
+  } else {
+    strsplit(row$target_aqsids, ";")[[1]]
+  }
+  
+  msa_definitions[[key]] <- list(
+    name = if (is.na(row$name) || row$name == "") NULL else row$name,
+    name_short = if (is.na(row$name_short) || row$name_short == "") NULL else row$name_short,
+    state_code = s_code,
+    bbox_coords = bbox,
+    gmt_offset = row$gmt_offset,
+    target_aqsids = aqsids
+  )
+}
 
 # Global variables and functions
 state_code_to_name <- c(
@@ -178,7 +224,7 @@ state_code_to_name <- c(
   "40" = "oklahoma", "41" = "oregon", "42" = "pennsylvania", "44" = "rhode island", 
   "45" = "south carolina", "46" = "south dakota", "47" = "tennessee", "48" = "texas", 
   "49" = "utah", "50" = "vermont", "51" = "virginia", "53" = "washington", 
-  "54" = "west virginia", "55" = "wisconsin", "56" = "wyoming", "84" = "wyoming"
+  "54" = "west virginia", "55" = "wisconsin", "56" = "wyoming"
 )
 state_name_to_code <- setNames(names(state_code_to_name), state_code_to_name)
 # Normalize to Title Case for easier lookup
@@ -249,7 +295,7 @@ state_agency_lookup <- c(
 safe_download <- function(url, error_message = "Download failed") {
   tryCatch({
     response <- httr::GET(url, httr::timeout(60))
-    cat(paste0("\n[", Sys.time(), "] Download URL: ", url, " - Status: ", httr::status_code(response), "\n"))
+    log_debug(paste0("\n[", Sys.time(), "] Download URL: ", url, " - Status: ", httr::status_code(response), "\n"))
     
     if (httr::status_code(response) == 200) {
       return(list(success = TRUE, data = httr::content(response, "text", encoding = "UTF-8")))
@@ -257,7 +303,7 @@ safe_download <- function(url, error_message = "Download failed") {
       return(list(success = FALSE, message = paste(error_message, "- Status:", httr::status_code(response))))
     }
   }, error = function(e) {
-    cat(paste0("\n[", Sys.time(), "] Download Error for: ", url, " - Error: ", e$message, "\n"))
+    log_debug(paste0("\n[", Sys.time(), "] Download Error for: ", url, " - Error: ", e$message, "\n"))
     return(list(success = FALSE, message = paste(error_message, "-", e$message)))
   })
 }
@@ -412,7 +458,7 @@ read_kml <- function(date, layer, state_sf_transformed, sites_sf) {
     sites_data$Smoke_Intensity <- layer
     sites_data$date <- as.Date(date)
     
-    print(paste("Date:", date, "Layer:", layer, "Sites with smoke:", nrow(sites_data)))
+    log_debug(paste("Date:", date, "Layer:", layer, "Sites with smoke:", nrow(sites_data)))
     
     return(sites_data)
   }, error = function(e) {
@@ -425,42 +471,42 @@ check_tiering_csv <- function(url) {
   tryCatch({
     # Read just the header to check columns
     data <- read.csv(url, nrows = 5)
-    print(paste("Checking data structure from:", url))
+    log_debug(paste("Checking data structure from:", url))
     
     # Get lowercase column names for flexible matching
     cols <- tolower(names(data))
     
     # Check for SITE_ID (matches site_id, site.id, siteid)
     if (any(grepl("site.?id", cols))) {
-      print("Column SITE_ID found.")
+      log_debug("Column SITE_ID found.")
     } else {
-      print("Column SITE_ID NOT found.")
+      log_debug("Column SITE_ID NOT found.")
     }
     
     # Check for Month
     if ("month" %in% cols) {
-      print("Column month found.")
+      log_debug("Column month found.")
     } else {
-      print("Column month NOT found.")
+      log_debug("Column month NOT found.")
     }
     
     # Check for Tier 1 (matches tier.1, tier 1, tier1)
     if (any(grepl("tier.?1", cols))) {
-      print("Column Tier 1 found.")
+      log_debug("Column Tier 1 found.")
     } else {
-      print("Column Tier 1 NOT found.")
+      log_debug("Column Tier 1 NOT found.")
     }
     
     # Check for Tier 2
     if (any(grepl("tier.?2", cols))) {
-      print("Column Tier 2 found.")
+      log_debug("Column Tier 2 found.")
     } else {
-      print("Column Tier 2 NOT found.")
+      log_debug("Column Tier 2 NOT found.")
     }
     
     return(TRUE)
   }, error = function(e) {
-    print(paste("Error checking tiering CSV:", e$message))
+    log_debug(paste("Error checking tiering CSV:", e$message))
     # Return TRUE anyway to attempt processing in the main logic
     return(TRUE)
   })
@@ -505,8 +551,8 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
     df_pm25$Concentration_Label <- cut(df_pm25$PM25_24HR, breaks = concentration_ranges_pm25, labels = concentration_labels_pm25, right = FALSE)
     
     # Meteorological data retrieval
-    print("ASOS_Stations structure:")
-    print(str(ASOS_Stations))
+    log_debug("ASOS_Stations structure:")
+    log_debug(obj = ASOS_Stations, is_str = TRUE)
     
     ASOS_Stations <- ASOS_Stations %>%
       filter(!is.na(ICAO) & ICAO != "") %>%
@@ -525,8 +571,8 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
                     "&month2=", format(selectedDate, "%m"), 
                     "&day2=", format(selectedDate, "%d"))
       
-      print(paste("Requesting data for station:", icao))
-      print(paste("URL:", url))
+      log_debug(paste("Requesting data for station:", icao))
+      log_debug(paste("URL:", url))
       
       retry_count <- 0
       max_retries <- 1
@@ -538,20 +584,20 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
             station_data <- read.csv(text = content(response, "text", encoding = "UTF-8"))
             if (nrow(station_data) > 0) {
               weather_data <- rbind(weather_data, station_data)
-              print(paste("Successfully retrieved data for station:", icao))
+              log_debug(paste("Successfully retrieved data for station:", icao))
               break  # Successful, exit the retry loop
             } else {
-              print(paste("No data returned for station:", icao))
+              log_debug(paste("No data returned for station:", icao))
             }
           } else {
-            print(paste("HTTP error for station", icao, "- Status code:", status_code(response)))
+            log_debug(paste("HTTP error for station", icao, "- Status code:", status_code(response)))
           }
           retry_count <- retry_count + 1
           if (retry_count == max_retries) {
             warning(paste("Failed to retrieve data for station", icao, "after", max_retries, "attempts"))
           }
         }, error = function(e) {
-          print(paste("Error for station", icao, ":", conditionMessage(e)))
+          log_debug(paste("Error for station", icao, ":", conditionMessage(e)))
           retry_count <- retry_count + 1
         })
         Sys.sleep(1)  # Add a small delay between retries
@@ -573,8 +619,8 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
       by = "ICAO"
     )
     
-    print("Joined data structure:")
-    print(str(joined_data))
+    log_debug("Joined data structure:")
+    log_debug(obj = joined_data, is_str = TRUE)
     
     numeric_cols <- c("max_temp_f", "min_temp_f", "max_dewpoint_f", "min_dewpoint_f", "precip_in", "min_rh")
     joined_data[numeric_cols] <- lapply(joined_data[numeric_cols], function(x) as.numeric(as.character(x)))
@@ -2089,12 +2135,14 @@ server <- function(input, output, session) {
   })
 
   output$systemInfo <- renderPrint({
-    cat("R Version:   ", R.version.string, "\n")
-    cat("Platform:    ", R.version$platform, "\n")
-    cat("OS Type:     ", .Platform$OS.type, "\n")
-    cat("Shiny Ver:   ", as.character(packageVersion("shiny")), "\n")
-    cat("Local Time:  ", as.character(Sys.time()), "\n")
-    cat("Timezone:    ", Sys.timezone(), "\n")
+    if (DEBUG) {
+      cat("R Version:   ", R.version.string, "\n")
+      cat("Platform:    ", R.version$platform, "\n")
+      cat("OS Type:     ", .Platform$OS.type, "\n")
+      cat("Shiny Ver:   ", as.character(packageVersion("shiny")), "\n")
+      cat("Local Time:  ", as.character(Sys.time()), "\n")
+      cat("Timezone:    ", Sys.timezone(), "\n")
+    }
   })
   ## END of new code snippet ##
   
@@ -2120,16 +2168,16 @@ server <- function(input, output, session) {
       url <- get_latest_tiering_csv_url()
       
       if (!is.null(url)) {
-        print(paste("Found tiering CSV URL:", url))
+        log_debug(paste("Found tiering CSV URL:", url))
         # We verify if we can actually READ it. If not, we switch to backup immediately.
         if (check_tiering_csv(url)) {
           return(url)
         } else {
-          print(paste("Scraped URL failed check. Using backup:", backup_url))
+          log_debug(paste("Scraped URL failed check. Using backup:", backup_url))
           return(backup_url)
         }
       } else {
-        print(paste("Could not find latest tiering CSV URL. Using backup:", backup_url))
+        log_debug(paste("Could not find latest tiering CSV URL. Using backup:", backup_url))
         return(backup_url)
       }
     }, error = function(e) {
@@ -2227,11 +2275,11 @@ server <- function(input, output, session) {
     # 2. Download Data (Primary or Backup)
     raw_data <- tryCatch({
       current_url <- tiering_csv_url()
-      print(paste("Loading tiering data from:", current_url))
+      log_debug(paste("Loading tiering data from:", current_url))
       read.csv(current_url, stringsAsFactors = FALSE)
     }, error = function(e) {
-      print(paste("Primary URL failed:", e$message))
-      print(paste("Attempting backup URL:", backup_url))
+      log_debug(paste("Primary URL failed:", e$message))
+      log_debug(paste("Attempting backup URL:", backup_url))
       showNotification("Primary tiering data unavailable. Using backup data.", type = "warning")
       tiering_csv_url(backup_url) # Update reactive to use backup next time
       read.csv(backup_url, stringsAsFactors = FALSE)
@@ -2241,8 +2289,8 @@ server <- function(input, output, session) {
     # We perform this on 'raw_data' regardless of where it came from
     tryCatch({
       data <- raw_data
-      print("Original Tier Data Column Names:")
-      print(names(data))
+      log_debug("Original Tier Data Column Names:")
+      log_debug(obj = names(data))
       
       # Convert names to lowercase for easy matching
       current_names <- tolower(names(data))
@@ -2264,12 +2312,12 @@ server <- function(input, output, session) {
         names(data)[which(current_names == "month")[1]] <- "month"
       }
       
-      print("Final Processed Column Names:")
-      print(names(data))
+      log_debug("Final Processed Column Names:")
+      log_debug(obj = names(data))
       
       # Final Check
       if (!all(c("Tier.1", "Tier.2", "SITE_ID", "month") %in% names(data))) {
-        print("CRITICAL: Missing required columns even after processing.")
+        log_debug("CRITICAL: Missing required columns even after processing.")
         return(NULL)
       }
       
@@ -2459,12 +2507,12 @@ server <- function(input, output, session) {
       data <- pm25Data()
       
       # Add debugging output
-      print("PM2.5 Data Structure:")
-      str(data)
-      print("Number of rows in PM2.5 Data:")
-      print(nrow(data))
-      print("Unique State Codes:")
-      print(unique(data$State_Code))
+      log_debug("PM2.5 Data Structure:")
+      log_debug(obj = data, is_str = TRUE)
+      log_debug("Number of rows in PM2.5 Data:")
+      log_debug(obj = nrow(data))
+      log_debug("Unique State Codes:")
+      log_debug(obj = unique(data$State_Code))
       
       if (is.null(data) || nrow(data) == 0) {
         return(NULL)
@@ -2481,10 +2529,10 @@ server <- function(input, output, session) {
       }
       
       # Add more debugging output
-      print("Filtered Data Structure:")
-      str(data)
-      print("Number of rows in Filtered Data:")
-      print(nrow(data))
+      log_debug("Filtered Data Structure:")
+      log_debug(obj = data, is_str = TRUE)
+      log_debug("Number of rows in Filtered Data:")
+      log_debug(obj = nrow(data))
       
       if (nrow(data) == 0) {
         return(NULL)
@@ -2492,7 +2540,7 @@ server <- function(input, output, session) {
       
       data
     }, error = function(e) {
-      print(paste("Error in filteredPM25Data:", conditionMessage(e)))
+      log_debug(paste("Error in filteredPM25Data:", conditionMessage(e)))
       NULL
     })
   })
@@ -2625,7 +2673,7 @@ server <- function(input, output, session) {
         scale_x_date(date_breaks = date_info$breaks, date_labels = date_info$labels)
       
     }, error = function(e) {
-      print(paste("Error in HMS Plot:", e$message))
+      log_debug(paste("Error in HMS Plot:", e$message))
       ggplot() + annotate("text", x=0.5, y=0.5, label=paste("Error:", e$message)) + theme_void()
     })
   })
@@ -2679,10 +2727,10 @@ server <- function(input, output, session) {
     available_columns <- names(data_to_display)
     numeric_columns <- intersect(c("Value", "Tier.1", "Tier.2"), available_columns)
     
-    print("Columns in filtered data table:")
-    print(available_columns)
-    print("Numeric columns to format:")
-    print(numeric_columns)
+    log_debug("Columns in filtered data table:")
+    log_debug(obj = available_columns)
+    log_debug("Numeric columns to format:")
+    log_debug(obj = numeric_columns)
     
     # Create the datatable
     dt <- datatable(data_to_display, 
@@ -2720,8 +2768,8 @@ server <- function(input, output, session) {
       state_pm25_data <- filteredPM25Data()
       
       # Debug print
-      print("PM2.5 Data before processing:")
-      print(state_pm25_data %>% filter(SiteName == "GPORT YC"))
+      log_debug("PM2.5 Data before processing:")
+      log_debug(obj = state_pm25_data %>% filter(SiteName == "GPORT YC"))
       
       if (!all(c("Latitude", "Longitude") %in% names(state_pm25_data))) {
         showNotification("Latitude and Longitude columns not found in PM2.5 data.", type = "error")
@@ -2790,8 +2838,8 @@ server <- function(input, output, session) {
       combined_data <- combined_data %>%
         arrange(AQSID, date, factor(Smoke_Intensity, levels = c("Light", "Medium", "Heavy")))
       
-      print("Combined data after processing:")
-      print(combined_data %>% filter(SiteName == "GPORT YC"))
+      log_debug("Combined data after processing:")
+      log_debug(obj = combined_data %>% filter(SiteName == "GPORT YC"))
       
       combinedData(combined_data)
     })
