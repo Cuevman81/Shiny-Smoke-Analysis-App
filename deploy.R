@@ -1,6 +1,20 @@
 # deploy.R — one-step publish to shinyapps.io
 # Usage:  from within the Smoke_App folder, run:  source("deploy.R")
 #
+# KNOWN ISSUE (2026-06-28): the lockfile pins terra 1.9-34, which was released
+# 2026-06-18 and does NOT yet have a prebuilt Linux binary on Posit Package
+# Manager. shinyapps.io (GDAL 3.4.1) therefore tries to COMPILE it from source
+# and fails (terra 1.9-34 needs GDAL >= 3.6). Older terra (<=1.8-93) builds on
+# the cloud but won't compile on a modern local GDAL (3.13), so we cannot pin
+# down. Resolution: wait until Posit publishes the terra 1.9-34 jammy binary,
+# then just re-run source("deploy.R") — no compile, full features.
+#   Check readiness:
+#     curl -H "User-Agent: R (4.6.0 x86_64-pc-linux-gnu x86_64 linux-gnu)" \
+#       https://packagemanager.posit.co/cran/__linux__/jammy/latest/src/contrib/PACKAGES \
+#       | grep -A12 '^Package: terra$'
+#   When the terra entry shows a "Path:" / "Built:" line (i.e. NeedsCompilation
+#   is satisfied by a binary), the cloud build will succeed.
+#
 # This uploads ONLY the files the app needs at runtime (see appFiles below).
 # Everything else in the folder — .Renviron (your AQS key), caches, the large
 # .dat files, PDFs, renv/library — is intentionally left OUT of the bundle.
