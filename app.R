@@ -45,7 +45,6 @@ suppressPackageStartupMessages({
   library(ggrepel)
   library(tigris)
   library(maps)
-  library(aqsr)
   library(stringi)
   library(shinycssloaders)
   library(leaflet)
@@ -104,8 +103,8 @@ log_debug <- function(..., is_str = FALSE, obj = NULL) {
 AQS_EMAIL_DEFAULT <- Sys.getenv("AQS_EMAIL", "")
 AQS_KEY_DEFAULT   <- Sys.getenv("AQS_KEY",   "")
 
-# --- EE Design Value module: set RAQSAPI credentials and load the module ---
-# (RAQSAPI is used only by the EE Design Value tab; AirNow/aqsr power the smoke tabs.)
+# --- AQS credentials (RAQSAPI is now the single AQS package for the whole app) ---
+# Powers both the EE Design Value tab and the smoke tabs' AQS source option.
 if (nzchar(AQS_EMAIL_DEFAULT) && nzchar(AQS_KEY_DEFAULT)) {
   try(RAQSAPI::aqs_credentials(username = AQS_EMAIL_DEFAULT, key = AQS_KEY_DEFAULT), silent = TRUE)
 }
@@ -4018,10 +4017,13 @@ server <- function(input, output, session) {
       
       if (input$aqs_src == "aqs") {
         req(input$aqs_email, input$aqs_key)
-        myu   <- create_user(email = input$aqs_email, key = input$aqs_key)
+        RAQSAPI::aqs_credentials(username = input$aqs_email, key = input$aqs_key)
         yseq  <- year(input$aqs_dates[1]):year(input$aqs_dates[2])
-        aqs_raw <- map_dfr(yseq, ~aqs_dailyData(myu, "byState", "88101",
-          paste0(.x,"0101"), paste0(.x,"1231"), state = st_code))
+        aqs_raw <- map_dfr(yseq, ~RAQSAPI::aqs_dailysummary_by_state(
+          parameter = "88101",
+          bdate     = as.Date(paste0(.x, "-01-01")),
+          edate     = as.Date(paste0(.x, "-12-31")),
+          stateFIPS = st_code))
         filt <- aqs_raw %>%
           mutate(date = as.Date(date_local)) %>%
           filter(date >= input$aqs_dates[1], date <= input$aqs_dates[2]) %>%
@@ -4152,11 +4154,14 @@ server <- function(input, output, session) {
       
       if (input$sd_src == "aqs") {
         req(input$sd_email, input$sd_key)
-        myu <- create_user(email = input$sd_email, key = input$sd_key)
+        RAQSAPI::aqs_credentials(username = input$sd_email, key = input$sd_key)
         yr  <- year(d)
-        # Fetching by state code
-        raw <- aqs_dailyData(myu, "byState", "88101",
-                             paste0(yr,"0101"), paste0(yr,"1231"), state = st_code)
+        # Fetching by state code (RAQSAPI)
+        raw <- RAQSAPI::aqs_dailysummary_by_state(
+                 parameter = "88101",
+                 bdate     = as.Date(paste0(yr, "-01-01")),
+                 edate     = as.Date(paste0(yr, "-12-31")),
+                 stateFIPS = st_code)
         filt <- raw %>%
           mutate(date = as.Date(date_local)) %>%
           filter(date == d) %>%
