@@ -43,10 +43,15 @@ get_hms_smoke <- function(date_val) {
   
   tryCatch({
     smoke <- sf::st_read(shp_file[1], quiet = TRUE)
+    # Ensure CRS is WGS84 (HMS shapefiles are WGS84 but the .prj is sometimes missing)
+    if (is.na(sf::st_crs(smoke))) smoke <- sf::st_set_crs(smoke, 4326)
+    else if (!isTRUE(sf::st_crs(smoke)$epsg == 4326)) smoke <- sf::st_transform(smoke, 4326)
     # Fix invalid geometries (common in HMS shapefiles)
     smoke <- sf::st_make_valid(smoke)
-    # Ensure CRS is WGS84
-    smoke <- sf::st_transform(smoke, 4326)
+    # Normalize HMS density labels to Title Case (Light / Medium / Heavy) so this
+    # one cached function can serve both the EE DV module and the smoke tabs.
+    if ("Density" %in% names(smoke)) smoke$Density <- stringr::str_to_title(as.character(smoke$Density))
+    else if ("DENSITY" %in% names(smoke)) smoke$Density <- stringr::str_to_title(as.character(smoke$DENSITY))
     return(smoke)
   }, error = function(e) {
     message("Error reading HMS shapefile: ", e$message)

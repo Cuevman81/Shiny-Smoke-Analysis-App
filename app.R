@@ -1324,26 +1324,10 @@ fetch_airnow_daily <- function(start_date, end_date, bbox = NULL, states = NULL)
 }
 
 fetch_hms_smoke_day <- function(date) {
-  d <- as.Date(date)
-  url <- sprintf(
-    "https://satepsanone.nesdis.noaa.gov/pub/FIRE/web/HMS/Smoke_Polygons/Shapefile/%s/%s/hms_smoke%s.zip",
-    format(d, "%Y"), format(d, "%m"), format(d, "%Y%m%d"))
-  tzip <- tempfile(fileext = ".zip"); tdir <- tempfile(pattern = "hms_smoke")
-  dir.create(tdir, showWarnings = FALSE)
-  on.exit(unlink(c(tzip, tdir), recursive = TRUE))
-  if (inherits(try(download.file(url, tzip, mode = "wb", quiet = TRUE), silent = TRUE), "try-error"))
-    return(NULL)
-  unzip(tzip, exdir = tdir)
-  shp <- list.files(tdir, pattern = "\\.shp$", full.names = TRUE)
-  if (!length(shp)) return(NULL)
-  sf_obj <- try(st_read(shp[1], quiet = TRUE), silent = TRUE)
-  if (inherits(sf_obj, "try-error")) return(NULL)
-  if (is.na(st_crs(sf_obj))) sf_obj <- st_set_crs(sf_obj, 4326)
-  else if (st_crs(sf_obj)$epsg != 4326) sf_obj <- st_transform(sf_obj, 4326)
-  sf_obj <- st_make_valid(sf_obj)
-  if ("Density" %in% names(sf_obj)) sf_obj$Density <- str_to_title(sf_obj$Density)
-  else if ("DENSITY" %in% names(sf_obj)) sf_obj$Density <- str_to_title(sf_obj$DENSITY)
-  sf_obj
+  # Delegates to the shared, cached HMS fetcher (get_hms_smoke, defined in
+  # dv_module.R). Both the smoke tabs and the EE Design Value module now download
+  # each day's NOAA HMS polygons once into hms_smoke_data/ and reuse them.
+  get_hms_smoke(date)
 }
 
 fetch_hms_fires_day <- function(date) {
