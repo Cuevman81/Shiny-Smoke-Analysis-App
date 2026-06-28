@@ -1577,6 +1577,8 @@ ui <- page_navbar(
   
   nav_panel("EE Design Value", dvUI("ee_dv")),
 
+  nav_menu("Smoke Analysis",
+
   nav_panel("AirNow MSA Analysis",
     layout_sidebar(
       sidebar = sidebar(width = 280,
@@ -1774,9 +1776,12 @@ ui <- page_navbar(
         )
       )
     )
-  ),
+  )
+  ),  # close nav_menu("Smoke Analysis")
 
-  # ---- Tab 6: Monitor Data Prep ----
+  # ---- Data & Reports group ----
+  nav_menu("Data & Reports",
+
   nav_panel("Monitor Data Prep",
     layout_sidebar(
       sidebar = sidebar(width = 280,
@@ -2020,9 +2025,10 @@ ui <- page_navbar(
                  )
                )
              )
-    ),
-    
-    tabPanel("Settings",
+    )
+  ),  # close nav_menu("Data & Reports")
+
+  tabPanel("Settings",
              fluidRow(
                column(4,
                       h4("User & AQS Configuration"),
