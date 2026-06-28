@@ -70,6 +70,8 @@ suppressPackageStartupMessages({
   library(rvest)
   library(openxlsx)
   library(promises)
+  library(RAQSAPI)   # EE Design Value module (AQS daily summary, monitors)
+  library(zoo)       # EE Design Value module
 })
 
 # Optional/system-dependent packages
@@ -101,6 +103,13 @@ log_debug <- function(..., is_str = FALSE, obj = NULL) {
 #    Windows: setx AQS_EMAIL "you@agency.gov"
 AQS_EMAIL_DEFAULT <- Sys.getenv("AQS_EMAIL", "")
 AQS_KEY_DEFAULT   <- Sys.getenv("AQS_KEY",   "")
+
+# --- EE Design Value module: set RAQSAPI credentials and load the module ---
+# (RAQSAPI is used only by the EE Design Value tab; AirNow/aqsr power the smoke tabs.)
+if (nzchar(AQS_EMAIL_DEFAULT) && nzchar(AQS_KEY_DEFAULT)) {
+  try(RAQSAPI::aqs_credentials(username = AQS_EMAIL_DEFAULT, key = AQS_KEY_DEFAULT), silent = TRUE)
+}
+source("dv_module.R", local = FALSE)
 
 # ============================================================
 # 3. NATIONWIDE MSA DEFINITIONS
@@ -1583,6 +1592,8 @@ ui <- page_navbar(
     )
   ),
   
+  nav_panel("EE Design Value", dvUI("ee_dv")),
+
   nav_panel("AirNow MSA Analysis",
     layout_sidebar(
       sidebar = sidebar(width = 280,
@@ -2074,6 +2085,10 @@ ui <- page_navbar(
 # 6. SERVER
 # ============================================================
 server <- function(input, output, session) {
+
+  # ---- EE Design Value module (ported from EE_DV_Recalculation_with_AQSR.R) ----
+  dvServer("ee_dv")
+
   # Set a higher timeout value
   options(timeout = 600)  # Set timeout to 600 seconds (10 minutes)
   

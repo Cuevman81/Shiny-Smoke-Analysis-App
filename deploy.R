@@ -25,6 +25,7 @@
 # --- Files to publish (whitelist) ------------------------------------------
 app_files <- c(
   "app.R",                 # the application
+  "dv_module.R",           # EE Design Value module (sourced by app.R)
   "msa_definitions.csv",   # MSA dropdown definitions (read at startup)
   "ASCDATA.CFG",           # HYSPLIT config (Back Trajectory tab)
   "SETUP.CFG",             # HYSPLIT config (Back Trajectory tab)
