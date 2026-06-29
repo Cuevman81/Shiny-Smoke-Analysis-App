@@ -638,6 +638,59 @@ get_site_info <- function(state_code, county_code) {
 }
 
 # ============================================================
+# EPA PM2.5 Exceptional-Events Tiering thresholds
+# ------------------------------------------------------------
+# Mirrors the classification used on the "HMS Plot with Tiering" tab:
+# the EPA tiering CSV gives per-site, per-month concentration thresholds
+# (tier 1 is the HIGHER/most-significant bar, tier 2 the lower bar).
+#   value >= Tier.1  -> "Tier 1"   (most extreme; strongest EE candidate)
+#   value >= Tier.2  -> "Tier 2"
+#   otherwise        -> "Below Tier 2"
+# Cached in-memory for the session so the CSV is fetched only once.
+# ============================================================
+.dv_tier_cache <- new.env(parent = emptyenv())
+
+get_tier_thresholds <- function() {
+  if (!is.null(.dv_tier_cache$data)) return(.dv_tier_cache$data)
+  # Same source the HMS tiering tab falls back to (kept up to date by EPA).
+  url <- "https://www.epa.gov/system/files/other-files/2025-10/for_posting.csv"
+  raw <- tryCatch(utils::read.csv(url, stringsAsFactors = FALSE),
+                  error = function(e) NULL)
+  if (is.null(raw)) return(NULL)
+  nm  <- tolower(names(raw))
+  t1  <- grep("tier.?1", nm)[1]; t2 <- grep("tier.?2", nm)[1]
+  sid <- grep("site.?id", nm)[1]; mo <- which(nm == "month")[1]
+  if (any(is.na(c(t1, t2, sid, mo)))) return(NULL)
+  out <- data.frame(
+    # CSV stores SITE_ID numerically (leading zeros stripped); pad back to 9.
+    SITE_ID = sprintf("%09d", suppressWarnings(as.integer(raw[[sid]]))),
+    month   = suppressWarnings(as.integer(raw[[mo]])),
+    Tier.1  = suppressWarnings(as.numeric(raw[[t1]])),
+    Tier.2  = suppressWarnings(as.numeric(raw[[t2]])),
+    stringsAsFactors = FALSE
+  )
+  .dv_tier_cache$data <- out
+  out
+}
+
+# Classify a vector of daily values for one site (9-digit AQS id) by month.
+# Returns a character vector aligned to value_vec.
+classify_tier <- function(site_id, month_vec, value_vec) {
+  n <- length(value_vec)
+  thr <- get_tier_thresholds()
+  if (is.null(thr)) return(rep("Tiering unavailable", n))
+  site_thr <- thr[thr$SITE_ID == site_id, c("month", "Tier.1", "Tier.2")]
+  if (nrow(site_thr) == 0) return(rep("No EPA threshold", n))
+  idx <- match(as.integer(month_vec), site_thr$month)
+  t1  <- site_thr$Tier.1[idx]; t2 <- site_thr$Tier.2[idx]
+  out <- rep("Below Tier 2", n)
+  out[!is.na(t2) & value_vec >= t2] <- "Tier 2"
+  out[!is.na(t1) & value_vec >= t1] <- "Tier 1"   # tier 1 wins (higher bar)
+  out[is.na(idx)] <- "No EPA threshold"
+  out
+}
+
+# ============================================================
 # Module server
 # ============================================================
 dvServer <- function(id) {
@@ -1863,29 +1916,45 @@ dvServer <- function(id) {
     req(results, results$exclusions_df) 
     
     if(nrow(results$exclusions_df) > 0) {
+      # 9-digit AQS site id (state+county+site) for the EPA tier lookup
+      full_site <- tryCatch(
+        paste0(sprintf("%02d", as.integer(input$state)),
+               sprintf("%03d", as.integer(input$county)),
+               sprintf("%04d", as.integer(input$site))),
+        error = function(e) NA_character_)
+
       display_df <- results$exclusions_df %>%
-        dplyr::mutate(date = format(as.Date(date), "%Y-%m-%d"), 
-               pm25 = round(pm25, 1),
-               dv_impact = round(dv_impact, 3),
-               resulting_dv = round(resulting_dv, 2))
-      
+        dplyr::mutate(
+          excl_order = dplyr::row_number(),                       # greedy exclusion sequence
+          month = as.integer(format(as.Date(date), "%m")),
+          Tier  = if (!is.na(full_site)) classify_tier(full_site, month, pm25) else "—",
+          date  = format(as.Date(date), "%Y-%m-%d"),
+          pm25  = round(pm25, 1),
+          dv_impact = round(dv_impact, 3),
+          resulting_dv = round(resulting_dv, 2))
+
       # Dynamically adjust columns for Smoke_Impact
       if ("Smoke_Impact" %in% colnames(display_df)) {
-        display_df <- display_df %>% 
-          dplyr::select(date, year, pm25, Smoke_Impact, dv_impact, resulting_dv)
-        colnames_vec <- c("Date Identified", "Year", "PM2.5 Value", "Smoke Impact", "DV Impact", "Resulting DV")
+        display_df <- display_df %>%
+          dplyr::select(excl_order, date, year, pm25, Tier, Smoke_Impact, dv_impact, resulting_dv)
+        colnames_vec <- c("Order", "Date Identified", "Year", "PM2.5 Value", "Tier", "Smoke Impact", "DV Drop (this step)", "Cumulative DV")
       } else {
-        display_df <- display_df %>% 
-          dplyr::select(date, year, pm25, dv_impact, resulting_dv)
-        colnames_vec <- c("Date Identified", "Year", "PM2.5 Value", "DV Impact", "Resulting DV")
+        display_df <- display_df %>%
+          dplyr::select(excl_order, date, year, pm25, Tier, dv_impact, resulting_dv)
+        colnames_vec <- c("Order", "Date Identified", "Year", "PM2.5 Value", "Tier", "DV Drop (this step)", "Cumulative DV")
       }
-      
-      display_df <- display_df %>% dplyr::arrange(desc(dv_impact))
-      
+
+      # Show in the order days are actually removed, so "Cumulative DV" reads
+      # as a running total down to the target.
+      display_df <- display_df %>% dplyr::arrange(excl_order)
+
       datatable(display_df,
                 rownames = FALSE,
                 colnames = colnames_vec,
-                options = list(pageLength = 10, order = list(list(ncol(display_df)-2, 'desc')))) # Order by Impact
+                options = list(pageLength = 10, order = list(list(0, 'asc')))) %>% # exclusion sequence
+        DT::formatStyle("Tier", target = "cell",
+                        backgroundColor = DT::styleEqual(
+                          c("Tier 1", "Tier 2"), c("#f8d7da", "#fff3cd")))
     } else {
       # Show empty table if no exclusions were needed/identified
       datatable(data.frame(`Date Identified` = character(0), Year = integer(0), `PM2.5 Value` = numeric(0), `DV Impact` = numeric(0), `Resulting DV` = numeric(0)),
@@ -2102,6 +2171,15 @@ dvUI <- function(id) {
           verbatimTextOutput(ns("scenario_results")),
           hr(),
           h5("Dates Identified for Exclusion to Meet Target:"),
+          helpText(
+            "Days are removed greedily, highest PM2.5 first, in the ", strong("Order"),
+            " shown. ", strong("Cumulative DV"), " is the design value after removing that day ",
+            em("and every day above it"), " — not that day on its own. ",
+            strong("DV Drop (this step)"), " is how much the DV fell when that single day was removed, ",
+            "given the days already removed before it. ",
+            strong("Tier"), " is the EPA PM2.5 tiering classification for that site/month ",
+            "(Tier 1 = most extreme, strongest exceptional-event candidate; Tier 2 = elevated)."
+          ),
           DTOutput(ns("scenario_table")),
           hr(),
           actionButton(ns("apply_scenario"), "Apply Scenario Exclusions to Main Data",
