@@ -378,14 +378,20 @@ get_latest_tiering_csv_url <- function() {
       return(backup_url)
     }
     
-    # Get the most recent file (assuming the date in the filename is the most recent)
-    # If no digits found (e.g. for_posting.csv), it will pick the first one found
-    dates <- str_extract(csv_links, "\\d{8}")
-    if(all(is.na(dates))) {
-      latest_csv <- csv_links[1]
-    } else {
-      latest_csv <- csv_links[which.max(dates)]
+    # Rank candidates by the most recent date we can find in EITHER the
+    # filename (YYYYMMDD, e.g. r_fire_excluded_tiers_20260105.csv) OR the
+    # directory path (YYYY-MM, e.g. /other-files/2026-01/for_posting.csv).
+    # for_posting.csv carries no date in its name, so the directory month is
+    # what tells us a newer EPA posting has appeared.
+    score_date <- function(u) {
+      d8 <- str_extract(u, "\\d{8}")
+      if (!is.na(d8)) return(suppressWarnings(as.numeric(d8)))            # YYYYMMDD
+      ym <- str_extract(u, "\\d{4}[-/]\\d{2}")
+      if (!is.na(ym)) return(suppressWarnings(as.numeric(paste0(gsub("[-/]", "", ym), "00")))) # YYYYMM00
+      return(0)
     }
+    scores <- vapply(csv_links, score_date, numeric(1))
+    latest_csv <- csv_links[which.max(scores)]
     
     # Construct the full URL
     if (startsWith(latest_csv, "http")) {
@@ -1825,10 +1831,11 @@ ui <- page_navbar(
                         width = 12,
                         tabPanel("PM2.5 Data", withSpinner(DTOutput("dataTable"))),
                         tabPanel("Combined Data", withSpinner(DTOutput("combinedDataTable"))),
-                        tabPanel("HMS Plot with Tiering", 
+                        tabPanel("HMS Plot with Tiering",
                                  fluidRow(
-                                   column(12, 
-                                          pickerInput("selectedSiteNames", "Select SiteNames", 
+                                   column(12,
+                                          uiOutput("tieringStatus"),
+                                          pickerInput("selectedSiteNames", "Select SiteNames",
                                                       choices = NULL, multiple = TRUE,
                                                       options = list(`actions-box` = TRUE, `live-search` = TRUE)),
                                           downloadButton("downloadHMSPlot", "Download Plot"),
@@ -2338,8 +2345,33 @@ server <- function(input, output, session) {
       return(NULL)
     })
   })
-  
-  
+
+  # Status line on the HMS Tiering tab: shows which EPA tiering vintage is
+  # currently loaded so the user can confirm at a glance it is the latest.
+  output$tieringStatus <- renderUI({
+    url <- tiering_csv_url()
+    td  <- tryCatch(tier_data(), error = function(e) NULL)
+    if (is.null(td)) {
+      return(tags$div(style = "font-size:0.85em; color:#888; margin-bottom:6px;",
+                      icon("circle-info"), " EPA tiering data not loaded yet."))
+    }
+    # Data vintage = most recent AQS query date recorded in the file (if present)
+    vintage <- NA
+    if ("AQS_query_date" %in% names(td)) {
+      vintage <- suppressWarnings(max(as.Date(td$AQS_query_date), na.rm = TRUE))
+      if (!is.finite(as.numeric(vintage))) vintage <- NA
+    }
+    posting <- if (!is.null(url)) str_extract(url, "\\d{4}[-/]\\d{2}") else NA
+    tags$div(
+      style = "font-size:0.85em; color:#555; background:#f4f7fb; border:1px solid #d6e0ef; border-radius:6px; padding:6px 10px; margin-bottom:8px;",
+      icon("table-list"), tags$b(" EPA PM2.5 tiering data in use: "),
+      if (!is.na(vintage)) paste0("queried ", format(vintage, "%Y-%m-%d")) else "vintage unknown",
+      if (!is.na(posting) && nzchar(posting)) paste0("  •  posting ", posting) else "",
+      tags$span(style = "color:#888;", "  —  auto-checks EPA for a newer file every 24 h.")
+    )
+  })
+
+
   # Reactive values
   pm25Data <- reactiveVal(NULL)
   combinedData <- reactiveVal(NULL)
