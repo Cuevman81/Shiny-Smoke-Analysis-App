@@ -100,11 +100,16 @@ log_debug <- function(..., is_str = FALSE, obj = NULL) {
 # ============================================================
 # 2. CREDENTIALS  (set env vars to avoid plaintext in source)
 #    Windows: setx AQS_EMAIL "you@agency.gov"
-#    On shinyapps.io the bundled .Renviron supplies these (no env var support
-#    there); load it explicitly in case the process didn't read it at startup.
-if (file.exists(".Renviron")) readRenviron(".Renviron")
+#    shinyapps.io now runs on the Posit Connect runtime, which does NOT read
+#    .Renviron from the content directory (and may strip dotfiles from the
+#    bundle). Credentials therefore also ship as 'aqs.env' (same format,
+#    git-ignored) and are loaded explicitly. readRenviron() accepts any path.
+for (.env_file in c(".Renviron", "aqs.env")) {
+  if (file.exists(.env_file)) readRenviron(.env_file)
+}
 AQS_EMAIL_DEFAULT <- Sys.getenv("AQS_EMAIL", "")
 AQS_KEY_DEFAULT   <- Sys.getenv("AQS_KEY",   "")
+message("[startup] AQS credentials present: ", nzchar(AQS_EMAIL_DEFAULT) && nzchar(AQS_KEY_DEFAULT))
 
 # --- AQS credentials (RAQSAPI is now the single AQS package for the whole app) ---
 # Powers both the EE Design Value tab and the smoke tabs' AQS source option.

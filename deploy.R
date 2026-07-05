@@ -29,7 +29,9 @@ TERRA_PIN <- "1.8-86"
 app_files <- c(
   "app.R",                 # the application
   "dv_module.R",           # EE Design Value module (sourced by app.R)
-  ".Renviron",             # AQS credentials for RAQSAPI (account-private bundle)
+  "aqs.env",               # AQS credentials (.Renviron format, git-ignored).
+                           # NOT named .Renviron: the Connect runtime behind
+                           # shinyapps.io ignores/strips content-dir dotfiles.
   "msa_definitions.csv",   # MSA dropdown definitions (read at startup)
   "ASCDATA.CFG",           # HYSPLIT config (Back Trajectory tab)
   "SETUP.CFG",             # HYSPLIT config (Back Trajectory tab)
