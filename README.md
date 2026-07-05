@@ -36,13 +36,14 @@ For the **Back Trajectory** tool to run:
 
 ## 🔑 Configuration & API Keys
 
-To use AQS API features, you need to configure your EPA AQS credentials:
+To use AQS API features (including the **EE Design Value** tab), you need EPA AQS credentials:
 1. **Sign Up**: Register for an AQS API key by visiting the [EPA AQS Data API Signup](https://aqs.epa.gov/aqsweb/documents/data_api.html#signup).
-2. **Environment Variables**: Add your credentials to the `.Renviron` file in this directory:
+2. **Environment Variables**: Add your credentials to a `.Renviron` file in this directory (and an identical copy named `aqs.env`, which is what ships to shinyapps.io — both are git-ignored):
    ```env
-   AQS_EMAIL="your_email@agency.gov"
-   AQS_KEY="your_api_key"
+   AQS_EMAIL=your_email@agency.gov
+   AQS_KEY=your_api_key
    ```
+   Make sure **both** values are filled in — an empty `AQS_KEY` fails silently and surfaces as "No counties available." in the EE Design Value tab. The app logs `[startup] AQS credentials present: TRUE/FALSE` at launch so you can verify.
    *Alternatively, you can input these credentials directly within the **Settings** tab in the running app.*
 
 ---
@@ -57,14 +58,15 @@ To use AQS API features, you need to configure your EPA AQS credentials:
 6. **Monitor Data Prep**: A utility to convert raw `monitoring_site_locations.dat` coordinate files into clean, active PM2.5 monitor CSV tables.
 7. **HMS Smoke PM2.5 Analysis**: Merges historical AirNow monitoring data with NOAA's HMS Smoke Intensity polygons.
 8. **Daily AQ, Met, HMS, and Back Trajectory Analysis**: A multi-faceted dashboard integrating NOAA surface weather charts, upper-air maps (925mb to 300mb), and forward/back trajectory generation via HYSPLIT.
-9. **Data Summary**: High-level statistical dashboard reporting data completeness, missing value metrics, and spatial distributions of AQI classes.
-10. **Settings**: Adjust API caching, view connectivity status logs, export settings, and modify AQS credentials.
+9. **EE Design Value**: Recalculates PM2.5 design values per EPA 40 CFR Part 50 Appendix N directly from AQS daily data (via RAQSAPI). Select a site and design-value period, identify candidate exceptional-event days, exclude them, and see the resulting design-value impact — with HMS smoke polygon overlays as supporting evidence for demonstrations. Requires AQS credentials (see Configuration).
+10. **Data Summary**: High-level statistical dashboard reporting data completeness, missing value metrics, and spatial distributions of AQI classes.
+11. **Settings**: Adjust API caching, view connectivity status logs, export settings, and modify AQS credentials.
 
 ---
 
 ## 📊 Customizing MSAs (Metropolitan Statistical Areas)
 
-Metropolitan definitions are externalized to [msa_definitions.csv](file:///Users/rodneycuevas/Library/CloudStorage/OneDrive-MississippiDepartmentofEnvironmentalQuality/Documents/Exceptional%20Events/Tools/Smoke_App/msa_definitions.csv). You can add or modify regions without editing the R source code.
+Metropolitan definitions are externalized to [msa_definitions.csv](msa_definitions.csv). You can add or modify regions without editing the R source code.
 
 ### **CSV Schema**
 | Column | Description | Example |
@@ -79,8 +81,26 @@ Metropolitan definitions are externalized to [msa_definitions.csv](file:///Users
 
 ---
 
+## 🚀 Deploying to shinyapps.io
+
+Deploy from the R console inside this folder:
+
+```r
+source("deploy.R")
+```
+
+The script handles two shinyapps.io-specific quirks:
+
+1. **terra pin**: terra 1.9-34 (a transitive dependency via leaflet → raster, and direct via maptiles) fails to compile against the GDAL 3.4.1 on the shinyapps.io build image. `deploy.R` generates the deployment manifest, pins terra to **1.8-86** (the last release that builds there), and deploys via `manifestPath`. Once a fixed terra ships, set `TERRA_PIN <- NULL` in `deploy.R`.
+2. **Credentials**: shinyapps.io has no server-side environment variable support, so the AQS credentials ship inside the (account-private) bundle as `aqs.env`. This file is git-ignored and must never be committed.
+
+Only the runtime files are uploaded (see the `app_files` whitelist in `deploy.R`) — caches, met data, PDFs, and the renv library stay local.
+
+---
+
 ## ❓ Troubleshooting
 
+* **"No counties available." in the EE Design Value tab**: AQS credentials are missing or incomplete. Check the app logs (`rsconnect::showLogs()` for the deployed app) for `[startup] AQS credentials present: FALSE`, then verify `.Renviron` / `aqs.env` contain non-empty `AQS_EMAIL` **and** `AQS_KEY`.
 * **Missing `msa_definitions.csv`**: If deleted, the app will automatically regenerate the default CSV file at startup.
 * **OneDrive / Network Sync Locks**: If HYSPLIT trajectory runs fail due to file permissions, ensure the app isn't being run inside a folder being actively synced by OneDrive (or verify that execution logs in the console show the local temporary execution directories are created correctly).
 * **Package Errors**: If you encounter package version breakages, use `renv::restore()` to restore the environment using the committed `renv.lock` file.
