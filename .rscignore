@@ -1,7 +1,8 @@
 # .rscignore — belt-and-suspenders guard for shinyapps.io deployment.
 # deploy.R already whitelists only the needed files; this is a second layer
-# so secrets/large files never get bundled even on a plain deployApp() call.
-.Renviron
+# so large files never get bundled even on a plain deployApp() call.
+# NOTE: .Renviron is NOT excluded — shinyapps.io has no env var support, so
+# the AQS credentials must ship inside the (account-private) bundle.
 .RData
 .Rhistory
 .git

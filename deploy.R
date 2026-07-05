@@ -22,9 +22,14 @@
 TERRA_PIN <- "1.8-86"
 
 # --- Files to publish (whitelist) ------------------------------------------
+# NOTE: .Renviron (AQS_EMAIL / AQS_KEY) MUST ship in the bundle. shinyapps.io
+# has no server-side env var support, and the EE Design Value tab needs AQS
+# credentials at startup (county list, design values). The bundle is visible
+# only to this shinyapps.io account. Never commit .Renviron to git.
 app_files <- c(
   "app.R",                 # the application
   "dv_module.R",           # EE Design Value module (sourced by app.R)
+  ".Renviron",             # AQS credentials for RAQSAPI (account-private bundle)
   "msa_definitions.csv",   # MSA dropdown definitions (read at startup)
   "ASCDATA.CFG",           # HYSPLIT config (Back Trajectory tab)
   "SETUP.CFG",             # HYSPLIT config (Back Trajectory tab)
@@ -36,11 +41,6 @@ missing <- app_files[!file.exists(app_files)]
 if (length(missing) > 0) {
   stop("Cannot deploy — these files are missing:\n  ",
        paste(missing, collapse = "\n  "))
-}
-
-# --- Safety check: never ship the secret -----------------------------------
-if (".Renviron" %in% app_files) {
-  stop("Refusing to deploy: .Renviron must not be in the file list.")
 }
 
 # --- 1. Manifest from the renv library (lockfile stays out of the bundle) --

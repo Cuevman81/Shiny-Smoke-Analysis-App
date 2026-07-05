@@ -100,6 +100,9 @@ log_debug <- function(..., is_str = FALSE, obj = NULL) {
 # ============================================================
 # 2. CREDENTIALS  (set env vars to avoid plaintext in source)
 #    Windows: setx AQS_EMAIL "you@agency.gov"
+#    On shinyapps.io the bundled .Renviron supplies these (no env var support
+#    there); load it explicitly in case the process didn't read it at startup.
+if (file.exists(".Renviron")) readRenviron(".Renviron")
 AQS_EMAIL_DEFAULT <- Sys.getenv("AQS_EMAIL", "")
 AQS_KEY_DEFAULT   <- Sys.getenv("AQS_KEY",   "")
 
