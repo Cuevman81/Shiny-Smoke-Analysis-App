@@ -212,7 +212,13 @@
       "Package": "RAQSAPI",
       "Version": "2.0.5",
       "Source": "Repository",
-      "Priority": null,
+      "Type": "Package",
+      "Title": "A Simple Interface to the US EPA Air Quality System Data Mart API",
+      "Description": "Retrieve air monitoring data and associated metadata from the US Environmental Protection Agency's Air Quality System service using functions. See <https://aqs.epa.gov/aqsweb/documents/data_api.html> for details about the US EPA Data Mart API.",
+      "Encoding": "UTF-8",
+      "Authors@R": "c(person(given=\"Clinton\", family=\"Mccrowey\", email=\"mccrowey.clinton@epa.gov\", role=c(\"cre\", \"aut\"), comment=\"United States Environmental Protection Agency Region 3 Air and Radiation Division\"), person(given=\"Timothy\", family=\"Sharac\", role=c(\"ctb\",\"rev\"), email=NULL, comment=\"United States Environmental Protection Agency\"), person(given = \"Nick\", family = \"Mangus\", email = NULL, role=c(\"rev\"), comment=\"United States Environmental Protection Agency\"), person(given = \"Doug\", family = \"Jager\", email=NULL, role=c(\"ctb\", \"rev\"), comment=\"United States Environmental Protection Agency\"), person(given = \"Ryan\",family = \"Brown\", email=NULL, role=c(\"ctb\", \"rev\"), comment=\"United States Environmental Protection Agency\"), person(given = \"Daniel\", family = \"Garver\", email=NULL, role=c(\"ctb\", \"rev\"), comment=\"United States Environmental Protection Agency\"), person(given = \"Benjamin\", family = \"Wells\", email=NULL, role=c(\"ctb\", \"rev\"), comment=\"United States Environmental Protection Agency\"), person(given = \"Hayley\", family= \"Brittingham\", email = NULL, role=c(\"crr\", \"ctr\"), comment=\"Neptune and Company\"), person(given = \"Jeffrey\", family = \"Hollister\", email = \"hollister.jeff@epa.gov\", role = c(\"rev\"), comment = c(\"United States Environmental Protection Agency\", ORCID = \"0000-0002-9254-9740\" ) ), person(given = \"Edward\", family = \"Andrews\", email = \"edward.s.andrews@wv.gov\", role = c(\"rev\", \"ctb\"), comment = \"West Virginia Department of Environmental Protection, Division of Air Quality\" ) )",
+      "URL": "https://github.com/USEPA/RAQSAPI/, https://aqs.epa.gov/aqsweb/documents/data_api.html",
+      "BugReports": "https://github.com/USEPA/RAQSAPI/issues",
       "Depends": [
         "R (>= 4.0.0)"
       ],
@@ -228,9 +234,6 @@
         "stringr",
         "tibble"
       ],
-      "LinkingTo": [
-        null
-      ],
       "Suggests": [
         "covr",
         "devtools",
@@ -244,16 +247,24 @@
         "usethis",
         "withr"
       ],
-      "Enhances": [
-        null
-      ],
+      "SystemRequirements": "package manual and Vignettes require pandoc (>= 1.14) http://pandoc.org)",
+      "RoxygenNote": "7.3.1",
+      "VignetteBuilder": "knitr",
+      "BuildVignettes": "true",
+      "ByteCompile": "true",
       "License": "MIT + file LICENSE",
       "License_is_FOSS": "yes",
-      "License_restricts_use": "no",
-      "OS_type": null,
       "NeedsCompilation": "no",
-      "Repository": "CRAN",
-      "Type": "source"
+      "License_restricts_use": "no",
+      "Language": "en-US",
+      "Collate": "'AQSAPI_helperfunctions.R' 'bysite.R' 'bycounty.R' 'bystate.R' 'byma.R' 'bypqao.R' 'bycbsa.R' 'bybox.R' 'RAQSAPIlistfunctions.R' 'setupfunctions.R' 'zzz.R' 'RAQSAPI-package.R' 'deprecated.R'",
+      "Copyright": "United States Environmental Protection Agency",
+      "RdMacros": "lifecycle",
+      "Config/testthat/edition": "3",
+      "X-schema.org-keywords": "United State Environmental Protection Agency, Environmental-data-retrieval, Air-Quality-System, AQS-Datamart, Air-monitoring, Environmental-monitoring",
+      "Author": "Clinton Mccrowey [cre, aut] (United States Environmental Protection Agency Region 3 Air and Radiation Division), Timothy Sharac [ctb, rev] (United States Environmental Protection Agency), Nick Mangus [rev] (United States Environmental Protection Agency), Doug Jager [ctb, rev] (United States Environmental Protection Agency), Ryan Brown [ctb, rev] (United States Environmental Protection Agency), Daniel Garver [ctb, rev] (United States Environmental Protection Agency), Benjamin Wells [ctb, rev] (United States Environmental Protection Agency), Hayley Brittingham [crr, ctr] (Neptune and Company), Jeffrey Hollister [rev] (United States Environmental Protection Agency, <https://orcid.org/0000-0002-9254-9740>), Edward Andrews [rev, ctb] (West Virginia Department of Environmental Protection, Division of Air Quality)",
+      "Maintainer": "Clinton Mccrowey <mccrowey.clinton@epa.gov>",
+      "Repository": "CRAN"
     },
     "RColorBrewer": {
       "Package": "RColorBrewer",
@@ -5504,21 +5515,15 @@
     },
     "zoo": {
       "Package": "zoo",
-      "Version": "1.8.15",
+      "Version": "1.8-15",
       "Source": "Repository",
-      "Priority": null,
+      "Date": "2025-12-15",
+      "Title": "S3 Infrastructure for Regular and Irregular Time Series (Z's Ordered Observations)",
+      "Authors@R": "c(person(given = \"Achim\", family = \"Zeileis\", role = c(\"aut\", \"cre\"), email = \"Achim.Zeileis@R-project.org\", comment = c(ORCID = \"0000-0003-0918-3766\")), person(given = \"Gabor\", family = \"Grothendieck\", role = \"aut\", email = \"ggrothendieck@gmail.com\"), person(given = c(\"Jeffrey\", \"A.\"), family = \"Ryan\", role = \"aut\", email = \"jeff.a.ryan@gmail.com\"), person(given = c(\"Joshua\", \"M.\"), family = \"Ulrich\", role = \"ctb\", email = \"josh.m.ulrich@gmail.com\"), person(given = \"Felix\", family = \"Andrews\", role = \"ctb\", email = \"felix@nfrac.org\"))",
+      "Description": "An S3 class with methods for totally ordered indexed observations. It is particularly aimed at irregular time series of numeric vectors/matrices and factors. zoo's key design goals are independence of a particular index/date/time class and consistency with ts and base R by providing methods to extend standard generics.",
       "Depends": [
         "R (>= 3.1.0)",
         "stats"
-      ],
-      "Imports": [
-        "utils",
-        "graphics",
-        "grDevices",
-        "lattice (>= 0.20-27)"
-      ],
-      "LinkingTo": [
-        null
       ],
       "Suggests": [
         "AER",
@@ -5536,16 +5541,19 @@
         "tseries",
         "xts"
       ],
-      "Enhances": [
-        null
+      "Imports": [
+        "utils",
+        "graphics",
+        "grDevices",
+        "lattice (>= 0.20-27)"
       ],
       "License": "GPL-2 | GPL-3",
-      "License_is_FOSS": null,
-      "License_restricts_use": null,
-      "OS_type": null,
+      "URL": "https://zoo.R-Forge.R-project.org/",
       "NeedsCompilation": "yes",
+      "Author": "Achim Zeileis [aut, cre] (ORCID: <https://orcid.org/0000-0003-0918-3766>), Gabor Grothendieck [aut], Jeffrey A. Ryan [aut], Joshua M. Ulrich [ctb], Felix Andrews [ctb]",
+      "Maintainer": "Achim Zeileis <Achim.Zeileis@R-project.org>",
       "Repository": "CRAN",
-      "Type": "source"
+      "Encoding": "UTF-8"
     }
   }
 }

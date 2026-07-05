@@ -5,9 +5,6 @@ account: rcuevas
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 17010885
-bundleId: 11921065
+bundleId: 12224449
 url: https://rcuevas.shinyapps.io/Shiny_Smoke_Analysis/
 version: 1
-asMultiple: FALSE
-asStatic: FALSE
-ignoredFiles: .RData|4-AQS_Flagging_EPA.pdf|active-sites.dat|LICENSE|met/gdas1.mar26.w1|met/RP202602.gbl|met/test_gdas1|monitoring_site_locations.csv|monitoring_site_locations.dat|README.md|www/MDEQ_Logo.gif|archive
