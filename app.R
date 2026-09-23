@@ -133,7 +133,8 @@ with_aqs_creds <- function(email, key, expr) {
 }
 
 # dv_module.R also defines the basemap helpers (add_gray_base/labels/basemap)
-# used by both files: it is sourced into the global env, which app.R can see.
+# and the Esri attribution strings used by both files: it is sourced into the
+# global env, which app.R can see.
 source("dv_module.R", local = FALSE)
 
 # ============================================================
@@ -3990,7 +3991,8 @@ server <- function(input, output, session) {
     pt_coords <- st_coordinates(md$pt)
     m <- leaflet() %>%
       add_gray_basemap(group = "Basemap") %>%
-      addProviderTiles("Esri.WorldImagery", group = "Satellite") %>%
+      addProviderTiles("Esri.WorldImagery", group = "Satellite",
+                       options = providerTileOptions(attribution = ESRI_IMAGERY_ATTRIBUTION)) %>%
       setView(lng = unname(pt_coords[1,1]), lat = unname(pt_coords[1,2]), zoom = 7)
 
     if (!is.null(md$smoke_sf) && nrow(md$smoke_sf) > 0) {
@@ -4271,7 +4273,8 @@ server <- function(input, output, session) {
 
     m <- leaflet() %>%
       add_gray_basemap(group = "Basemap") %>%
-      addProviderTiles("Esri.WorldImagery", group = "Satellite")
+      addProviderTiles("Esri.WorldImagery", group = "Satellite",
+                       options = providerTileOptions(attribution = ESRI_IMAGERY_ATTRIBUTION))
 
     # 1. Add Smoke Polygons First (Bottom)
     if (!is.null(md$smoke_sf) && nrow(md$smoke_sf) > 0) {

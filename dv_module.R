@@ -11,10 +11,18 @@ if (!dir.exists(hms_cache_dir)) dir.create(hms_cache_dir, showWarnings = FALSE)
 # "API KEY REQUIRED" without one; carto.com/basemaps/apikey), so these are
 # Esri's keyless Light Gray Canvas tiles: a label-free base plus a separate
 # labels/boundaries layer that can go on top of smoke polygons.
+# Esri's terms require the credit "Powered by Esri" plus each service's own
+# source line (its copyrightText at .../MapServer?f=json). Base and labels
+# carry the identical string, which Leaflet shows once. app.R's Satellite
+# layers use ESRI_IMAGERY_ATTRIBUTION (defined here so both files see it).
 ESRI_GRAY_LABELS_URL <- "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
-add_gray_base   <- function(map, group = NULL) addProviderTiles(map, "Esri.WorldGrayCanvas", group = group)
+ESRI_CANVAS_ATTRIBUTION  <- "Powered by Esri | Esri, HERE, Garmin, &copy; OpenStreetMap contributors, and the GIS user community"
+ESRI_IMAGERY_ATTRIBUTION <- "Powered by Esri | Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community"
+add_gray_base   <- function(map, group = NULL) addProviderTiles(map, "Esri.WorldGrayCanvas", group = group,
+                                                                options = providerTileOptions(attribution = ESRI_CANVAS_ATTRIBUTION))
 add_gray_labels <- function(map, group = NULL) {
   addTiles(map, urlTemplate = ESRI_GRAY_LABELS_URL, group = group,
+           attribution = ESRI_CANVAS_ATTRIBUTION,
            options = tileOptions(maxNativeZoom = 16))
 }
 add_gray_basemap <- function(map, group = NULL) add_gray_labels(add_gray_base(map, group), group)
