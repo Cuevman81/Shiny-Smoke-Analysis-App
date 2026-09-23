@@ -1660,7 +1660,7 @@ dvServer <- function(id) {
   output$hms_smoke_map <- renderLeaflet({
     # Base map (no labels)
     m <- leaflet() %>%
-      addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
+      add_gray_base() %>%
       setView(lng = -89.5, lat = 32.7, zoom = 7)
     
     # 1. Add smoke polygons FIRST (so labels go on top)
@@ -1687,7 +1687,7 @@ dvServer <- function(id) {
     }
     
     # 2. Add labels and boundaries ON TOP of everything
-    m <- m %>% addProviderTiles(providers$CartoDB.PositronOnlyLabels)
+    m <- m %>% add_gray_labels()
     
     # 3. Add site marker
     if (!is.null(rv$data) && nrow(rv$data) > 0) {

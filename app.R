@@ -131,6 +131,19 @@ with_aqs_creds <- function(email, key, expr) {
   on.exit(options(old), add = TRUE)
   expr
 }
+
+# Light gray basemap. CARTO's basemaps now need an API key (every tile shows
+# "API KEY REQUIRED" without one; carto.com/basemaps/apikey), so these are
+# Esri's keyless Light Gray Canvas tiles: a label-free base plus a separate
+# labels/boundaries layer that can go on top of smoke polygons.
+ESRI_GRAY_LABELS_URL <- "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+add_gray_base   <- function(map, group = NULL) addProviderTiles(map, "Esri.WorldGrayCanvas", group = group)
+add_gray_labels <- function(map, group = NULL) {
+  addTiles(map, urlTemplate = ESRI_GRAY_LABELS_URL, group = group,
+           options = tileOptions(maxNativeZoom = 16))
+}
+add_gray_basemap <- function(map, group = NULL) add_gray_labels(add_gray_base(map, group), group)
+
 source("dv_module.R", local = FALSE)
 
 # ============================================================
@@ -3986,7 +3999,7 @@ server <- function(input, output, session) {
     md       <- hourly_rv$map_data
     pt_coords <- st_coordinates(md$pt)
     m <- leaflet() %>%
-      addProviderTiles("CartoDB.Positron",  group = "Basemap") %>%
+      add_gray_basemap(group = "Basemap") %>%
       addProviderTiles("Esri.WorldImagery", group = "Satellite") %>%
       setView(lng = unname(pt_coords[1,1]), lat = unname(pt_coords[1,2]), zoom = 7)
 
@@ -4267,7 +4280,7 @@ server <- function(input, output, session) {
       na.color = "gray")
 
     m <- leaflet() %>%
-      addProviderTiles("CartoDB.Positron",  group = "Basemap") %>%
+      add_gray_basemap(group = "Basemap") %>%
       addProviderTiles("Esri.WorldImagery", group = "Satellite")
 
     # 1. Add Smoke Polygons First (Bottom)
@@ -4434,7 +4447,7 @@ server <- function(input, output, session) {
     req(sl_rv$pt)
     pt_c <- st_coordinates(sl_rv$pt)
     m <- leaflet() %>%
-      addProviderTiles("CartoDB.Positron") %>%
+      add_gray_basemap() %>%
       setView(lng = unname(pt_c[1,1]), lat = unname(pt_c[1,2]), zoom = 5)
 
     ring_kms  <- c(100, 250, 500)
