@@ -94,14 +94,54 @@ check_smoke_impact <- function(smoke_sf, lat, lon) {
   return("None")
 }
 
-fetch_and_process_epa_data <- function(start_year, end_year, state, county, site, selected_method_code) { 
+# AQS daily summaries return one row per sample duration x pollutant standard x
+# event type (and per POC/method), so taking every row, or the first row per
+# date, depends on the order AQS happens to list them. Keep the measured daily
+# value once, per the rule validated in the aqs-daily-vs-hourly-flags note:
+#   - 24-hour durations: X (24-HR BLK AVG, continuous) and 7 (24 HOUR, filter FRMs)
+#   - event-inclusive rows: "Events Included", or "No Events" on unflagged days
+#   - the "PM25 Annual 2024" standard's rows when AQS supplies them
+aqs_daily_rows <- function(df) {
+  if (is.null(df) || !nrow(df)) return(df)
+  df <- df[as.character(df$sample_duration_code) %in% c("X", "7"), , drop = FALSE]
+  if ("event_type" %in% names(df)) {
+    df <- df[df$event_type %in% c("Events Included", "No Events"), , drop = FALSE]
+  }
+  if ("pollutant_standard" %in% names(df) && nrow(df)) {
+    df <- df %>%
+      dplyr::group_by(state_code, county_code, site_number, poc, method_code, date_local) %>%
+      dplyr::filter(!any(pollutant_standard %in% "PM25 Annual 2024") |
+                      pollutant_standard %in% "PM25 Annual 2024") %>%
+      dplyr::slice(1) %>%
+      dplyr::ungroup()
+  }
+  df
+}
+
+# One PM2.5 value per site-day for the smoke tabs: the daily rows above, minus
+# the uncorrected T640/T640x series (methods 236/238, high-biased; see the
+# t640-236-vs-736-adjustment note), keeping the lowest POC.
+aqs_one_per_site_day <- function(df) {
+  df <- aqs_daily_rows(df)
+  if (is.null(df) || !nrow(df)) return(df)
+  df %>%
+    dplyr::filter(!as.character(method_code) %in% c("236", "238")) %>%
+    dplyr::arrange(poc) %>%
+    dplyr::distinct(state_code, county_code, site_number, date_local, .keep_all = TRUE)
+}
+
+DV_CACHE_MAX_AGE_DAYS <- 7   # AQS recertifies data; a cached pull must not live forever
+
+fetch_and_process_epa_data <- function(start_year, end_year, state, county, site, selected_method_code) {
   # --- Cache Check ---
-  # Create a unique filename for the cache based on site, start year, and end year
-  # We'll need the site name for a better filename, but site number is safer for uniqueness
-  cache_name <- paste0("site_", state, "_", county, "_", site, "_DV", end_year, ".rds")
+  # One file per site, design-value year AND instrument, so T640 and T640x
+  # pulls for the same site never answer for each other. Entries expire.
+  cache_name <- paste0("site_", state, "_", county, "_", site, "_DV", end_year,
+                       "_M", selected_method_code, ".rds")
   cache_path <- file.path("aqs_data_cache", cache_name)
-  
-  if (file.exists(cache_path)) {
+
+  if (file.exists(cache_path) &&
+      difftime(Sys.time(), file.mtime(cache_path), units = "days") < DV_CACHE_MAX_AGE_DAYS) {
     message("Loading AQS data from cache: ", cache_name)
     return(readRDS(cache_path))
   }
@@ -180,17 +220,15 @@ fetch_and_process_epa_data <- function(start_year, end_year, state, county, site
         county_char <- as.character(county)
         site_char <- as.character(site)
         param_code_char <- "88101"
-        # *** FIX: Filter for DAILY durations only ***
-        duration_codes_char <- c("1", "X") # Use '1' (24-HR) and 'X' (DAILY)
-        
+        # Durations, event type and pollutant standard: see aqs_daily_rows().
         filtered_data <- year_data %>%
           dplyr::filter(
             as.character(county_code) == county_char,
             as.character(site_number) == site_char,
             as.character(parameter_code) == param_code_char,
-            as.character(method_code) %in% method_to_use_this_year, # Use the single determined code
-            as.character(sample_duration_code) %in% duration_codes_char # Filter for daily duration
-          )
+            as.character(method_code) %in% method_to_use_this_year # Use the single determined code
+          ) %>%
+          aqs_daily_rows()
         # --- End Apply Filter ---
       }
       
@@ -334,12 +372,14 @@ calculate_design_value <- function(data, dv_year) {
         q_completeness = (q_obs / days_in_q) * 100
       )
 
-    # Step 2: annual mean = mean of the (up to 4) quarterly means, rounded to 1 dp
-    #         (AQS convention). Annual validity requires all 4 quarters >= 75%.
+    # Step 2: annual mean = mean of the (up to 4) quarterly means, carried at
+    #         FULL PRECISION. Per 40 CFR Part 50 Appendix N sec. 4.2 the annual
+    #         mean is NOT rounded; rounding occurs only once, at the final design
+    #         value (see below). Annual validity requires all 4 quarters >= 75%.
     annual_means <- quarterly_means %>%
       dplyr::group_by(year) %>%
       dplyr::summarize(
-        annual_mean        = round(mean(quarter_mean, na.rm = TRUE), 1),
+        annual_mean        = mean(quarter_mean, na.rm = TRUE),
         n_quarters         = dplyr::n(),
         n_observations     = sum(q_obs),
         data_completeness  = mean(q_completeness, na.rm = TRUE),   # annual figure for display
@@ -380,9 +420,12 @@ calculate_design_value <- function(data, dv_year) {
       ))
     }
     
-    # Design value = 3-year average of the (rounded) annual means, rounded to
-    # the nearest 0.1 ug/m3 per Appendix N. This reproduces the AQS DVR value.
-    design_value <- round(mean(annual_means$annual_mean, na.rm = TRUE), 1)
+    # Design value = 3-year average of the full-precision annual means, rounded
+    # ONCE to the nearest 0.1 ug/m3 per 40 CFR Part 50 Appendix N (sec. 4.3;
+    # 0.05 rounds up). This reproduces the AQS DVR value. R's round() does not
+    # round half up: 8.95 is stored as 8.9499999... and round() gives 8.9, so
+    # round explicitly (the 1e-9 absorbs that representation error).
+    design_value <- floor(mean(annual_means$annual_mean, na.rm = TRUE) * 10 + 0.5 + 1e-9) / 10
     print(paste("Calculated Design Value:", design_value))
     
     # Check if design value is valid
@@ -450,8 +493,8 @@ create_calendar_heatmap <- function(data, year, title) {
                                 pm25 <= 9.0 ~ "Good",
                                 pm25 <= 35.4 ~ "Moderate",
                                 pm25 <= 55.4 ~ "Unhealthy for Sensitive Groups",
-                                pm25 <= 150.4 ~ "Unhealthy",
-                                pm25 <= 250.4 ~ "Very Unhealthy",
+                                pm25 <= 125.4 ~ "Unhealthy",        # 2024 PM2.5 AQI table
+                                pm25 <= 225.4 ~ "Very Unhealthy",
                                 TRUE ~ "Hazardous"
                               ),
                               "<br><b>Status:</b>", ifelse(excluded, 
@@ -459,7 +502,7 @@ create_calendar_heatmap <- function(data, year, title) {
                                                            "Included")))
   
   # Define the fixed AQI color scale breakpoints and colors
-  aqi_breaks <- c(0, 9.0, 35.4, 55.4, 150.4, 250.4, Inf)
+  aqi_breaks <- c(0, 9.0, 35.4, 55.4, 125.4, 225.4, Inf)   # 2024 PM2.5 AQI table
   aqi_colors <- c("#00e400", "#ffff00", "#ff7e00", "#ff0000", "#8f3f97", "#7e0023")
   
   # Create the colorscale mapping for plotly
@@ -528,8 +571,8 @@ get_aqi_color <- function(pm25) {
     pm25 <= 9.0 ~ "#00e400",  # Green - Good
     pm25 <= 35.4 ~ "#ffff00",  # Yellow - Moderate
     pm25 <= 55.4 ~ "#ff7e00",  # Orange - Unhealthy for Sensitive Groups
-    pm25 <= 150.4 ~ "#ff0000", # Red - Unhealthy
-    pm25 <= 250.4 ~ "#8f3f97", # Purple - Very Unhealthy
+    pm25 <= 125.4 ~ "#ff0000", # Red - Unhealthy (2024 table)
+    pm25 <= 225.4 ~ "#8f3f97", # Purple - Very Unhealthy
     TRUE ~ "#7e0023"           # Maroon - Hazardous
   )
 }
@@ -652,8 +695,10 @@ get_site_info <- function(state_code, county_code) {
 
 get_tier_thresholds <- function() {
   if (!is.null(.dv_tier_cache$data)) return(.dv_tier_cache$data)
-  # Same source the HMS tiering tab falls back to (kept up to date by EPA).
-  url <- "https://www.epa.gov/system/files/other-files/2025-10/for_posting.csv"
+  # Same lookup the HMS tiering tab uses: EPA posts new files under a new
+  # month directory, so find the newest instead of hard-coding one.
+  url <- tryCatch(get_latest_tiering_csv_url(), error = function(e) NULL) %||%
+    "https://www.epa.gov/system/files/other-files/2025-10/for_posting.csv"
   raw <- tryCatch(utils::read.csv(url, stringsAsFactors = FALSE),
                   error = function(e) NULL)
   if (is.null(raw)) return(NULL)
@@ -1288,15 +1333,21 @@ dvServer <- function(id) {
         }
       }
       
-      # Check 3: Show DV calculation
+      # Check 3: Show DV calculation. Per Appendix N sec. 4.2-4.3 the annual
+      # means are averaged at full precision and rounded ONCE, at the design
+      # value. Display the full-precision average and the final rounded DV so
+      # the single-rounding step is explicit.
       if (!is.null(results$excluded$design_value) && !is.na(results$excluded$design_value)) {
         means <- results$excluded$annual_means$annual_mean
         calc_dv <- mean(means, na.rm = TRUE)
         validation_items <- c(validation_items,
-                              tags$li(HTML(paste0("<strong>DV Calculation: (", 
-                                                  paste(round(means, 2), collapse=" + "), 
-                                                  ") / 3 = ", 
-                                                  round(calc_dv, 2), " µg/m³</strong>")))
+                              tags$li(HTML(paste0("<strong>DV Calculation: (",
+                                                  paste(round(means, 3), collapse=" + "),
+                                                  ") / 3 = ",
+                                                  round(calc_dv, 3),
+                                                  " &rarr; ",
+                                                  format(results$excluded$design_value, nsmall = 1),
+                                                  " µg/m³</strong> (Appendix N: rounded once to 0.1)")))
         )
       }
       
@@ -1309,16 +1360,20 @@ dvServer <- function(id) {
     
     # Add completeness check and warning
     if (!is.null(results$excluded$annual_means)) {
+      # Appendix N sec. 4.1: EACH quarter must be >= 75% complete (the yearly
+      # average can pass while one quarter fails).
       low_completeness_years <- results$excluded$annual_means %>%
-        dplyr::filter(data_completeness < 75) %>%
+        dplyr::filter(!all_quarters_valid) %>%
         dplyr::pull(year)
-      
+
       if (length(low_completeness_years) > 0) {
         showNotification(
           HTML(paste0(
-            "<strong>Warning:</strong> The following years have less than 75% data completeness:<br>",
+            "<strong>Warning:</strong> These years have a quarter below 75% completeness ",
+            "(or fewer than 4 quarters): ",
             paste(low_completeness_years, collapse = ", "), "<br>",
-            "This may affect the validity of the design value calculation."
+            "Under 40 CFR 50 Appendix N sec. 4.1 they need the data-substitution tests ",
+            "before this design value is valid."
           )),
           type = "warning",
           duration = 10
@@ -2045,9 +2100,9 @@ dvUI <- function(id) {
         choices = c(
           "Teledyne T640  (736↔636 @ 2024)"  = "T640_TRANSITION",
           "Teledyne T640x (738↔638 @ 2024)"  = "T640X_TRANSITION",
-          "R&P PM2.5 FEM Mass (145)"               = "145",
-          "Thermo PM2.5 FEM 5014i (188)"           = "188",
-          "R&P PM2.5 FRM SA 2.2 (117)"             = "117"
+          "R&P 2025 PM2.5 FRM Sequential (145)"    = "145",
+          "Thermo PM2.5 FEM 5014i (183)"           = "183",
+          "R&P 2000 PM2.5 FRM (117)"               = "117"
         ), selected = "T640_TRANSITION"),
       helpText("Transition options auto-pick the correct method code per year."),
       numericInput(ns("dv_year"), "Design Value Year:", value = this_year,

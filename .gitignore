@@ -15,3 +15,6 @@ aqs_data_cache/
 hms_smoke_data/
 manifest.json
 aqs.env
+.env
+*.pem
+*.key

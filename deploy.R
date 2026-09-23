@@ -16,13 +16,14 @@
 # TERRA_PIN <- NULL and this deploys the library versions unmodified.
 #
 # This uploads ONLY the files the app needs at runtime (see app_files).
-# Everything else — .Renviron (your AQS key), caches, the large .dat files,
-# PDFs, renv/library — is intentionally left OUT of the bundle.
+# The AQS key ships as aqs.env (below) and stays on the server: app.R never
+# puts it in the page. Everything else (caches, the large .dat files, PDFs,
+# renv/library) is intentionally left OUT of the bundle.
 
 TERRA_PIN <- "1.8-86"
 
 # --- Files to publish (whitelist) ------------------------------------------
-# NOTE: .Renviron (AQS_EMAIL / AQS_KEY) MUST ship in the bundle. shinyapps.io
+# NOTE: the AQS credentials (AQS_EMAIL / AQS_KEY, as aqs.env) MUST ship in the bundle. shinyapps.io
 # has no server-side env var support, and the EE Design Value tab needs AQS
 # credentials at startup (county list, design values). The bundle is visible
 # only to this shinyapps.io account. Never commit .Renviron to git.

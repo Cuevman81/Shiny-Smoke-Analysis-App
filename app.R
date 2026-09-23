@@ -116,6 +116,21 @@ message("[startup] AQS credentials present: ", nzchar(AQS_EMAIL_DEFAULT) && nzch
 if (nzchar(AQS_EMAIL_DEFAULT) && nzchar(AQS_KEY_DEFAULT)) {
   try(RAQSAPI::aqs_credentials(username = AQS_EMAIL_DEFAULT, key = AQS_KEY_DEFAULT), silent = TRUE)
 }
+
+# The app's key stays on the server: it is never an input's starting value (a
+# password box only hides the dots; its value is in the page every visitor
+# downloads). A visitor may type their own key; it is used for their one call
+# only, because RAQSAPI keeps credentials in options(), which every session in
+# this R process shares. Blank boxes mean "use the app's key".
+with_aqs_creds <- function(email, key, expr) {
+  if (!nzchar(email %||% "") || !nzchar(key %||% "")) {
+    email <- AQS_EMAIL_DEFAULT
+    key   <- AQS_KEY_DEFAULT
+  }
+  old <- options(aqs_username = email, aqs_key = key)
+  on.exit(options(old), add = TRUE)
+  expr
+}
 source("dv_module.R", local = FALSE)
 
 # ============================================================
@@ -569,8 +584,9 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
     pm25_24hr <- as.numeric(sapply(data_pm25, function(x) x[6]))
     df_pm25 <- data.frame(Latitude = lat_pm25, Longitude = long_pm25, PM25_24HR = pm25_24hr)
     
-    concentration_ranges_pm25 <- c(0, 9, 35.4, 55.4, Inf)
-    df_pm25$Concentration_Label <- cut(df_pm25$PM25_24HR, breaks = concentration_ranges_pm25, labels = concentration_labels_pm25, right = FALSE)
+    # A boundary value (9.0, 35.4, 55.4) belongs to the LOWER category in the 2024 AQI table.
+    concentration_ranges_pm25 <- c(-Inf, 9, 35.4, 55.4, Inf)
+    df_pm25$Concentration_Label <- cut(df_pm25$PM25_24HR, breaks = concentration_ranges_pm25, labels = concentration_labels_pm25, right = TRUE)
     
     # Meteorological data retrieval
     log_debug("ASOS_Stations structure:")
@@ -601,7 +617,7 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
       
       while (retry_count < max_retries) {
         tryCatch({
-          response <- GET(url)
+          response <- GET(url, httr::timeout(30))
           if (status_code(response) == 200) {
             station_data <- read.csv(text = content(response, "text", encoding = "UTF-8"))
             if (nrow(station_data) > 0) {
@@ -1262,7 +1278,7 @@ fetch_airnow_hourly <- function(start_date, end_date, states = NULL) {
     ymd_str <- format(dt, "%Y%m%d"); hr_str <- format(dt, "%H")
     url <- paste0("https://files.airnowtech.org/airnow/",
                   format(dt, "%Y"), "/", ymd_str, "/HourlyAQObs_", ymd_str, hr_str, ".dat")
-    res <- try(GET(url), silent = TRUE)
+    res <- try(GET(url, httr::timeout(30)), silent = TRUE)   # one stalled file must not hang the app
     if (!inherits(res, "try-error") && status_code(res) == 200) {
       raw <- httr::content(res, "text", encoding = "UTF-8")
       if (trimws(raw) != "") {
@@ -1296,7 +1312,7 @@ fetch_airnow_daily <- function(start_date, end_date, bbox = NULL, states = NULL)
     ymd_str <- format(d, "%Y%m%d")
     url <- paste0("https://files.airnowtech.org/airnow/",
                   format(d, "%Y"), "/", ymd_str, "/daily_data_v2.dat")
-    res <- try(httr::GET(url), silent = TRUE)
+    res <- try(httr::GET(url, httr::timeout(30)), silent = TRUE)
     if (!inherits(res, "try-error") && httr::status_code(res) == 200) {
       raw <- httr::content(res, "text", encoding = "UTF-8")
       if (trimws(raw) != "") {
@@ -1516,7 +1532,7 @@ smoke_impact_text <- function(nearest_km, within_100, density_levels, pm25_vals)
   pm25_context <- if (!is.null(pm25_vals) && length(pm25_vals) > 0) {
     mx <- max(pm25_vals, na.rm = TRUE)
     paste0("Observed max hourly PM2.5 nearby: ", round(mx, 1), " \u00b5g/m\u00b3 (",
-           if (mx > 35.4) "ABOVE Moderate AQI threshold" else "within Moderate AQI range", ").")
+           aqi_cat(mx), " range on the 24-hour AQI scale).")
   } else ""
 
   paste(fire_context, density_context, pm25_context, sep = "\n")
@@ -1672,12 +1688,12 @@ ui <- page_navbar(
         radioButtons("aqs_src", "Data Source:",
                      choices = c("AQS API" = "aqs", "AirNow S3" = "airnow"), selected = "aqs"),
         conditionalPanel("input.aqs_src == 'aqs'",
-          # FIX v3: no plaintext credential defaults — reads from env vars
-          textInput("aqs_email", "AQS Email:",
-                    value = AQS_EMAIL_DEFAULT,
-                    placeholder = "set AQS_EMAIL env var"),
-          passwordInput("aqs_key", "AQS Key:",
-                        value = AQS_KEY_DEFAULT)
+          # Boxes start EMPTY: a starting value would ship the app's key in the
+          # page. Blank = the server uses its own key (see with_aqs_creds).
+          textInput("aqs_email", "AQS Email:", value = "",
+                    placeholder = "blank = use the app's key"),
+          passwordInput("aqs_key", "AQS Key:", value = "",
+                        placeholder = "blank = use the app's key")
         ),
         dateRangeInput("aqs_dates", "Date Range:",
                        start = Sys.Date() - 30, end = Sys.Date()),
@@ -1712,11 +1728,10 @@ ui <- page_navbar(
         radioButtons("sd_src", "Data Source:",
                      choices = c("AQS API" = "aqs", "AirNow S3" = "airnow"), selected = "aqs"),
         conditionalPanel("input.sd_src == 'aqs'",
-          textInput("sd_email", "AQS Email:",
-                    value = AQS_EMAIL_DEFAULT,
-                    placeholder = "set AQS_EMAIL env var"),
-          passwordInput("sd_key", "AQS Key:",
-                        value = AQS_KEY_DEFAULT)
+          textInput("sd_email", "AQS Email:", value = "",
+                    placeholder = "blank = use the app's key"),
+          passwordInput("sd_key", "AQS Key:", value = "",
+                        placeholder = "blank = use the app's key")
         ),
         dateInput("sd_date", "Date:", value = Sys.Date()),
         selectInput("sd_state", "State:", 
@@ -2048,16 +2063,17 @@ ui <- page_navbar(
                column(4,
                       h4("User & AQS Configuration"),
                       wellPanel(
-                        textInput("settings_aqs_email", "AQS Email:", value = Sys.getenv("AQS_EMAIL", "")),
-                        passwordInput("settings_aqs_key", "AQS Key:", value = Sys.getenv("AQS_KEY", "")),
+                        # Start empty: never put the app's key in the page.
+                        textInput("settings_aqs_email", "AQS Email:", value = "",
+                                  placeholder = "blank = use the app's key"),
+                        passwordInput("settings_aqs_key", "AQS Key:", value = "",
+                                      placeholder = "blank = use the app's key"),
+                        helpText("Optional: enter your own AQS login to run the smoke tabs with it.",
+                                 "It is used for your requests only and is never stored."),
                         hr(),
-                        checkboxInput("autoRefresh", "Enable Auto-Refresh", value = FALSE),
-                        numericInput("maxDownloadDays", "Maximum Download Days", value = 30, min = 1, max = 365),
-                        checkboxInput("cacheEnabled", "Enable Data Caching", value = TRUE),
                         actionButton("clearCache", "Clear Cache", icon = icon("trash")),
-                        hr(),
-                        downloadButton("exportSettings", "Export Settings"),
-                        fileInput("importSettings", "Import Settings", accept = ".json")
+                        helpText("Deletes cached AQS pulls (Design Value tab) and downloaded data,",
+                                 "so the next run fetches fresh values, e.g. after AQS recertifies a year.")
                       )
                ),
                column(4,
@@ -2096,28 +2112,23 @@ server <- function(input, output, session) {
   # Set a higher timeout value
   options(timeout = 600)  # Set timeout to 600 seconds (10 minutes)
   
-  app_settings <- reactiveValues(
-    auto_refresh = FALSE,
-    refresh_interval = 3600,  # seconds
-    max_download_days = 30,
-    cache_enabled = TRUE
-  )
-  
-  # Sync UI settings to reactive values
-  observe({
-    app_settings$auto_refresh <- input$autoRefresh
-    app_settings$max_download_days <- input$maxDownloadDays
-    app_settings$cache_enabled <- input$cacheEnabled
+  # Clear Cache: the README's remedy for stale cached AQS values.
+  observeEvent(input$clearCache, {
+    n <- length(list.files(c("aqs_data_cache", cache_dir), full.names = TRUE))
+    unlink(file.path("aqs_data_cache", "*"))
+    unlink(file.path(cache_dir, "*"))
+    showNotification(sprintf("Cleared %d cached file(s). The next run fetches fresh data.", n),
+                     type = "message")
   })
-  
-  # Update environment variables from Settings tab AND sync to other UI inputs
-  observeEvent(input$settings_aqs_email, { 
-    Sys.setenv(AQS_EMAIL = input$settings_aqs_email)
+
+  # Settings boxes sync to the tabs' boxes, within THIS visitor's session only.
+  # (No Sys.setenv(): every session shares one R process, so it would replace
+  # the key for everyone.)
+  observeEvent(input$settings_aqs_email, {
     updateTextInput(session, "aqs_email", value = input$settings_aqs_email)
     updateTextInput(session, "sd_email",  value = input$settings_aqs_email)
   })
-  observeEvent(input$settings_aqs_key, { 
-    Sys.setenv(AQS_KEY = input$settings_aqs_key)
+  observeEvent(input$settings_aqs_key, {
     updateTextInput(session, "aqs_key", value = input$settings_aqs_key)
     updateTextInput(session, "sd_key",  value = input$settings_aqs_key)
   })
@@ -2130,8 +2141,9 @@ server <- function(input, output, session) {
 
   output$api_status_dashboard <- renderUI({
     # 1. Check AQS Credentials
-    has_aqs_email <- nchar(input$settings_aqs_email %||% Sys.getenv("AQS_EMAIL")) > 0
-    has_aqs_key   <- nchar(input$settings_aqs_key   %||% Sys.getenv("AQS_KEY"))   > 0
+    # Present = the server has its own key, or this visitor typed one.
+    has_aqs_email <- nzchar(AQS_EMAIL_DEFAULT) || nzchar(input$settings_aqs_email %||% "")
+    has_aqs_key   <- nzchar(AQS_KEY_DEFAULT)   || nzchar(input$settings_aqs_key   %||% "")
     
     # 2. Check AirNow Reachability (Public S3)
     # We check if we can reach the main data index
@@ -2402,7 +2414,8 @@ server <- function(input, output, session) {
     }
     
     date_sequence <- seq.Date(from = as.Date(start_date), to = as.Date(end_date), by = "day")
-    # Parallelism is handled by the future_promise wrapper
+    # No plan() is set, so future_promise() below runs in THIS process: the app
+    # is busy for every visitor until the download finishes (see ExtendedTask).
     
     urls <- sapply(date_sequence, function(date) {
       year <- format(date, "%Y")
@@ -2470,7 +2483,7 @@ server <- function(input, output, session) {
     
     # 3. Start the long process in the background, passing the NORMAL VARIABLES
     future_promise({
-      # This code runs in a separate R process and uses the variables, not the inputs
+      # Runs inline (no plan() is set), using the variables, not the inputs
       download_airnow_data_bulk(start_date_val, end_date_val)
     }) %...>% (function(all_data) {
       # 4. 'then' -> This code runs ONLY if the promise succeeds
@@ -2982,7 +2995,7 @@ server <- function(input, output, session) {
     url <- paste0("https://files.airnowtech.org/airnow/", year, "/", yyyymmdd, "/daily_data_v2.dat")
     
     tryCatch({
-      response <- GET(url)
+      response <- GET(url, httr::timeout(30))
       if (status_code(response) == 200) {
         data <- read_delim(I(content(response, "text")), 
                            delim = "|", 
@@ -3535,7 +3548,7 @@ server <- function(input, output, session) {
     aqi_data <- summaryData() %>%
       filter(!is.na(Value) & !is.na(SiteName)) %>%
       mutate(
-        Category = cut(Value, breaks = pm25_breaks, labels = pm25_labels, right = FALSE)
+        Category = cut(Value, breaks = pm25_breaks, labels = pm25_labels, right = TRUE)  # 9.0 is Good
       ) %>%
       group_by(SiteName, Category) %>%
       summarise(Count = n(), .groups = 'drop') %>%
@@ -3617,6 +3630,13 @@ server <- function(input, output, session) {
                          if (!is.null(input$msa_custom_radius)) input$msa_custom_radius else 150)
     if (is.null(bbox)) { showNotification("Could not resolve location.", type = "error"); return() }
 
+    # Each day is 24 hourly AirNow files, downloaded while every other visitor
+    # waits (one R process), so cap the range.
+    if (as.numeric(max(input$msa_dates) - min(input$msa_dates)) + 1 > 15) {
+      showNotification("Please choose 15 days or fewer: each day downloads 24 hourly AirNow files.",
+                       type = "warning", duration = 8)
+      return()
+    }
     withProgress(message = "Fetching AirNow PM2.5...", value = 0, {
       msa_start <- min(input$msa_dates)
       msa_end   <- max(input$msa_dates)
@@ -4046,15 +4066,14 @@ server <- function(input, output, session) {
       st_code <- state_name_to_code[input$aqs_state]
       
       if (input$aqs_src == "aqs") {
-        req(input$aqs_email, input$aqs_key)
-        RAQSAPI::aqs_credentials(username = input$aqs_email, key = input$aqs_key)
         yseq  <- year(input$aqs_dates[1]):year(input$aqs_dates[2])
-        aqs_raw <- map_dfr(yseq, ~RAQSAPI::aqs_dailysummary_by_state(
-          parameter = "88101",
-          bdate     = as.Date(paste0(.x, "-01-01")),
-          edate     = as.Date(paste0(.x, "-12-31")),
-          stateFIPS = st_code))
-        filt <- aqs_raw %>%
+        aqs_raw <- with_aqs_creds(input$aqs_email, input$aqs_key,
+          map_dfr(yseq, ~RAQSAPI::aqs_dailysummary_by_state(
+            parameter = "88101",
+            bdate     = as.Date(paste0(.x, "-01-01")),
+            edate     = as.Date(paste0(.x, "-12-31")),
+            stateFIPS = st_code)))
+        filt <- aqs_one_per_site_day(aqs_raw) %>%
           mutate(date = as.Date(date_local)) %>%
           filter(date >= input$aqs_dates[1], date <= input$aqs_dates[2]) %>%
           mutate(Monitoring_Site_ID = paste(state_code, county_code, site_number, sep = "-"),
@@ -4183,16 +4202,15 @@ server <- function(input, output, session) {
       st_code <- state_name_to_code[input$sd_state]
       
       if (input$sd_src == "aqs") {
-        req(input$sd_email, input$sd_key)
-        RAQSAPI::aqs_credentials(username = input$sd_email, key = input$sd_key)
         yr  <- year(d)
-        # Fetching by state code (RAQSAPI)
-        raw <- RAQSAPI::aqs_dailysummary_by_state(
-                 parameter = "88101",
-                 bdate     = as.Date(paste0(yr, "-01-01")),
-                 edate     = as.Date(paste0(yr, "-12-31")),
-                 stateFIPS = st_code)
-        filt <- raw %>%
+        # Fetching by state code (RAQSAPI); the visitor's key for this call only
+        raw <- with_aqs_creds(input$sd_email, input$sd_key,
+                 RAQSAPI::aqs_dailysummary_by_state(
+                   parameter = "88101",
+                   bdate     = as.Date(paste0(yr, "-01-01")),
+                   edate     = as.Date(paste0(yr, "-12-31")),
+                   stateFIPS = st_code))
+        filt <- aqs_one_per_site_day(raw) %>%
           mutate(date = as.Date(date_local)) %>%
           filter(date == d) %>%
           mutate(Monitoring_Site_ID = paste(state_code, county_code, site_number, sep = "-"),
@@ -4228,7 +4246,8 @@ server <- function(input, output, session) {
       pm_sites <- filt %>%
         filter(!is.na(pm25)) %>%
         mutate(AQI_Cat = aqi_cat(pm25),
-               label   = paste0("<b>", City, "</b><br>", County, " Co.<br>PM2.5: <b>",
+               # City/County come from AirNow/AQS feeds: escape before they become HTML
+               label   = paste0("<b>", htmltools::htmlEscape(City), "</b><br>", htmltools::htmlEscape(County), " Co.<br>PM2.5: <b>",
                                 round(pm25, 1), "</b> \u00b5g/m\u00b3<br>", AQI_Cat))
 
       sd_rv$map_data <- list(pm_sites = pm_sites, smoke_sf = smoke_sf,
@@ -4456,7 +4475,7 @@ server <- function(input, output, session) {
                          color = "#333333", weight = 1,
                          fillColor = ~pal_d(AQI_Cat), fillOpacity = 0.8,
                          group  = "AirNow Daily PM2.5",
-                         popup  = ~paste0("<b>",City,"</b><br>PM2.5: ",round(pm25,1),
+                         popup  = ~paste0("<b>",htmltools::htmlEscape(City),"</b><br>PM2.5: ",round(pm25,1),
                                           " \u00b5g/m\u00b3<br>AQI: ",AQI_Cat)) %>%
         addLegend("bottomleft",
                   colors  = c("#00e400","#ffff00","#ff7e00","#ff0000","#8f3f97","#7e0023"),
