@@ -7,6 +7,18 @@
 hms_cache_dir <- "hms_smoke_data"
 if (!dir.exists(hms_cache_dir)) dir.create(hms_cache_dir, showWarnings = FALSE)
 
+# Light gray basemap. CARTO's basemaps now need an API key (every tile shows
+# "API KEY REQUIRED" without one; carto.com/basemaps/apikey), so these are
+# Esri's keyless Light Gray Canvas tiles: a label-free base plus a separate
+# labels/boundaries layer that can go on top of smoke polygons.
+ESRI_GRAY_LABELS_URL <- "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}"
+add_gray_base   <- function(map, group = NULL) addProviderTiles(map, "Esri.WorldGrayCanvas", group = group)
+add_gray_labels <- function(map, group = NULL) {
+  addTiles(map, urlTemplate = ESRI_GRAY_LABELS_URL, group = group,
+           options = tileOptions(maxNativeZoom = 16))
+}
+add_gray_basemap <- function(map, group = NULL) add_gray_labels(add_gray_base(map, group), group)
+
 # ============================================================
 # Engine / helper functions
 # ============================================================
