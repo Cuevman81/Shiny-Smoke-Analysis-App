@@ -18,7 +18,7 @@ brew install gdal geos proj imagemagick
 ### 🐧 **Ubuntu / Debian**
 ```bash
 sudo apt-get update
-sudo apt-get install -y binutils libproj-dev gdal-bin libgdal-dev libgeos-dev liblwgeom-dev libmagick++-dev
+sudo apt-get install -y binutils libproj-dev gdal-bin libgdal-dev libgeos-dev libudunits2-dev libmagick++-dev
 ```
 
 ### 🪟 **Windows**
@@ -26,10 +26,12 @@ sudo apt-get install -y binutils libproj-dev gdal-bin libgdal-dev libgeos-dev li
 2. Install GDAL, GEOS, and PROJ via the [OSGeo4W Installer](https://www.osgeo.org/projects/osgeo4w/).
 3. Download and install [ImageMagick](https://imagemagick.org/script/download.php) (check the box to "Install development headers and libraries for C and C++" during installation).
 
+Then, from R in this folder, run `renv::restore()` to install the R packages pinned in `renv.lock` (made with R 4.6.1), and start the app with `shiny::runApp()`.
+
 ### 🌪️ **HYSPLIT & Trajectory Data**
 For the **Back Trajectory** tool to run:
-- The app uses the `splitr` package which interfaces with NOAA HYSPLIT.
-- Meteorological data files (such as GDAS1 or Reanalysis binary files) should be placed in the local `met/` directory (e.g. `met/RP202602.gbl`).
+- The app uses the `splitr` package, which interfaces with NOAA HYSPLIT and bundles its executables. It comes from GitHub (`rich-iannone/splitr`) and `renv::restore()` installs it; the CRAN package also named `splitr` is an unrelated Excel tool.
+- The app downloads the meteorological files it needs (Reanalysis or GDAS1 binary files, e.g. `met/RP202602.gbl`) from NOAA ARL into the local `met/` directory, and reuses any file already there.
 - Note: HYSPLIT is configured to execute in a local temporary directory to dodge OneDrive synchronization locks or institutional network restrictions.
 
 ---
@@ -44,7 +46,7 @@ To use AQS API features (including the **EE Design Value** tab), you need EPA AQ
    AQS_KEY=your_api_key
    ```
    Make sure **both** values are filled in — an empty `AQS_KEY` fails silently and surfaces as "No counties available." in the EE Design Value tab. The app logs `[startup] AQS credentials present: TRUE/FALSE` at launch so you can verify.
-   *Alternatively, you can input these credentials directly within the **Settings** tab in the running app.*
+   *The AQS boxes on the **Settings**, **Multi-Day Smoke Events** and **Single Day PM2.5 Map** tabs start blank, which means "use the app's key"; that key stays on the server and is never put in the page. A visitor can type their own AQS login there, and it is used only for their own requests on those two smoke tabs. The EE Design Value tab always uses the key from `.Renviron` / `aqs.env`.*
 
 ---
 
@@ -60,7 +62,7 @@ To use AQS API features (including the **EE Design Value** tab), you need EPA AQ
 8. **Daily AQ, Met, HMS, and Back Trajectory Analysis**: A multi-faceted dashboard integrating NOAA surface weather charts, upper-air maps (925mb to 300mb), and forward/back trajectory generation via HYSPLIT.
 9. **EE Design Value**: Recalculates PM2.5 design values per EPA 40 CFR Part 50 Appendix N directly from AQS daily data (via RAQSAPI). Select a site and design-value period, identify candidate exceptional-event days, exclude them, and see the resulting design-value impact — with HMS smoke polygon overlays as supporting evidence for demonstrations. Requires AQS credentials (see Configuration).
 10. **Data Summary**: High-level statistical dashboard reporting data completeness, missing value metrics, and spatial distributions of AQI classes.
-11. **Settings**: Adjust API caching, view connectivity status logs, export settings, and modify AQS credentials.
+11. **Settings**: Clear cached data, check the AQS credential and AirNow server status, and optionally enter your own AQS login for the smoke tabs.
 
 ---
 
