@@ -1304,6 +1304,21 @@ fetch_airnow_hourly <- function(start_date, end_date, states = NULL) {
   bind_rows(all_df)
 }
 
+# AirNow site IDs. Field 2 (AQSID) is 9 digits for most US monitors, but some US
+# monitors use a 12-character form ("840" + 9 digits), and foreign monitors carry
+# their own country code ("368IRQ010001" is the US Embassy in Baghdad, whose first
+# two digits look like New York's "36"). Field 13 (the full AQSID) always starts
+# with the country code, so read US-ness and the state from it. Returns the
+# 9-digit US ID (state + county + site), or NA for a non-US monitor.
+airnow_us_id <- function(aqsid, full_aqsid = NA_character_) {
+  short <- trimws(as.character(aqsid))
+  full  <- trimws(as.character(full_aqsid))
+  full  <- ifelse(!is.na(full) & nchar(full) == 12, full,
+                  ifelse(!is.na(short) & nchar(short) == 12, short, paste0("840", short)))
+  id9 <- substr(full, 4, 12)
+  ifelse(substr(full, 1, 3) == "840" & grepl("^[0-9]{9}$", id9), id9, NA_character_)
+}
+
 fetch_airnow_daily <- function(start_date, end_date, bbox = NULL, states = NULL) {
   d1 <- min(as.Date(start_date), as.Date(end_date))
   d2 <- max(as.Date(start_date), as.Date(end_date))
@@ -1320,12 +1335,17 @@ fetch_airnow_daily <- function(start_date, end_date, bbox = NULL, states = NULL)
     if (!inherits(res, "try-error") && httr::status_code(res) == 200) {
       raw <- httr::content(res, "text", encoding = "UTF-8")
       if (trimws(raw) != "") {
-        df <- suppressWarnings(read_delim(I(raw), delim = "|", col_names = FALSE, show_col_types = FALSE))
+        df <- suppressWarnings(read_delim(I(raw), delim = "|", col_names = FALSE,
+                                          col_types = readr::cols(.default = readr::col_character()),
+                                          show_col_types = FALSE))
         if (nrow(df) > 0) {
+          if (!"X13" %in% names(df)) df$X13 <- NA_character_
           df <- df %>% filter(X4 == "PM2.5-24hr") %>%
+            mutate(us_id = airnow_us_id(X2, X13)) %>%
+            filter(!is.na(us_id)) %>%
             transmute(
-              Monitoring_Site_ID = paste(substr(X2,1,2), substr(X2,3,5), substr(X2,6,9), sep="-"),
-              StateName  = stringr::str_to_title(state_code_to_name[substr(X2,1,2)]),
+              Monitoring_Site_ID = paste(substr(us_id,1,2), substr(us_id,3,5), substr(us_id,6,9), sep="-"),
+              StateName  = stringr::str_to_title(state_code_to_name[substr(us_id,1,2)]),
               City       = X3,
               SiteName   = X3, # Standardize naming parity
               date       = d,
@@ -1333,6 +1353,9 @@ fetch_airnow_daily <- function(start_date, end_date, bbox = NULL, states = NULL)
               Longitude  = as.numeric(X12),
               pm25       = as.numeric(X6)
             ) %>%
+            filter(!is.na(Latitude), !is.na(Longitude),
+                   abs(Latitude) <= 90, abs(Longitude) <= 180,
+                   !(Latitude == 0 & Longitude == 0)) %>%   # e.g. Crossville, AL is listed at 0, 0
             mutate(AQI_Cat = aqi_cat(pm25))
           
           if (!is.null(states)) {
@@ -2459,9 +2482,10 @@ server <- function(input, output, session) {
         Latitude = as.numeric(Latitude),
         Longitude = as.numeric(Longitude),
         Value = as.numeric(Value),
-        State_Code = substr(AQSID, 1, 2),
-        County_Code = substr(AQSID, 3, 5),
-        Site_ID = substr(AQSID, 6, 9)
+        us_id = airnow_us_id(AQSID, Full_AQSID),
+        State_Code = substr(us_id, 1, 2),
+        County_Code = substr(us_id, 3, 5),
+        Site_ID = substr(us_id, 6, 9)
       ) %>%
       filter(Parameter_name == "PM2.5-24hr", !is.na(Value), !is.na(Valid_date))
     
@@ -3023,9 +3047,10 @@ server <- function(input, output, session) {
         data <- data %>%
           mutate(
             Valid_date = mdy(Valid_date),
-            State_Code = substr(AQSID, 1, 2),
-            County_Code = substr(AQSID, 3, 5),
-            Site_ID = substr(AQSID, 6, 9)
+            us_id = airnow_us_id(AQSID, Full_AQSID),
+            State_Code = substr(us_id, 1, 2),
+            County_Code = substr(us_id, 3, 5),
+            Site_ID = substr(us_id, 6, 9)
           )
         
         return(data)
@@ -4002,7 +4027,7 @@ server <- function(input, output, session) {
         addPolygons(data = md$smoke_sf, fillColor = ~sp(Density),
                     fillOpacity = 0.5, color = "#555555", weight = 0.8,
                     popup = ~paste0("<b>Smoke Density:</b> ", Density), group = "HMS Smoke") %>%
-        addLegend("bottomright", pal = sp, values = c("Light","Medium","Heavy"),
+        addLegend("bottomright", pal = sp, values = factor(c("Light","Medium","Heavy"), levels = c("Light","Medium","Heavy")),
                   title = "HMS Smoke", group = "HMS Smoke")
     }
     if (!is.null(md$fires_sf) && nrow(md$fires_sf) > 0) {
@@ -4265,10 +4290,13 @@ server <- function(input, output, session) {
     req(sd_rv$map_data)
     md <- sd_rv$map_data
     pm <- md$pm_sites
+    # A plain character vector of values would put the legend in alphabetical
+    # order (Good, Hazardous, Moderate...), so pass a factor in AQI order.
+    AQI_LEVELS <- c("Good","Moderate","Unhealthy for Sensitive Groups",
+                    "Unhealthy","Very Unhealthy","Hazardous")
     pal <- colorFactor(
       palette = c("#00e400","#ffff00","#ff7e00","#ff0000","#8f3f97","#7e0023"),
-      levels  = c("Good","Moderate","Unhealthy for Sensitive Groups",
-                  "Unhealthy","Very Unhealthy","Hazardous"),
+      levels  = AQI_LEVELS,
       na.color = "gray")
 
     m <- leaflet() %>%
@@ -4284,7 +4312,7 @@ server <- function(input, output, session) {
         addPolygons(data = md$smoke_sf, fillColor = ~sp(Density),
                     fillOpacity = 0.5, color = "#555", weight = 0.8,
                     popup = ~paste0("HMS Smoke: ", Density), group = "HMS Smoke") %>%
-        addLegend("bottomleft", pal = sp, values = c("Light","Medium","Heavy"),
+        addLegend("bottomleft", pal = sp, values = factor(c("Light","Medium","Heavy"), levels = c("Light","Medium","Heavy")),
                   title = "HMS Smoke Density", group = "HMS Smoke")
     }
     
@@ -4307,8 +4335,7 @@ server <- function(input, output, session) {
                          label = ~paste0(City, ": ", round(pm25,1), " \u00b5g/m\u00b3"),
                          group = "PM2.5 Monitors") %>%
         addLegend("bottomright", pal = pal,
-                  values = c("Good","Moderate","Unhealthy for Sensitive Groups",
-                             "Unhealthy","Very Unhealthy","Hazardous"),
+                  values = factor(AQI_LEVELS, levels = AQI_LEVELS),
                   title  = paste("PM2.5 AQI \u2014", md$date))
       
       # Dynamically fit bounds to the monitoring sites

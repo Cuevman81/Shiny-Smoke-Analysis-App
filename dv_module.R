@@ -1701,7 +1701,7 @@ dvServer <- function(id) {
                                fillColor = ~pal(Density),
                                fillOpacity = 0.5, # Slightly more opaque
                                label = ~paste("Smoke Density:", Density)) %>%
-                   addLegend(pal = pal, values = smoke_sf$Density, 
+                   addLegend(pal = pal, values = factor(smoke_sf$Density, levels = c("Light", "Medium", "Heavy")), 
                              title = paste("Smoke on", selected_date))
       }
     }
