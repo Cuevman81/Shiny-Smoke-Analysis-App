@@ -4,6 +4,10 @@ A comprehensive R Shiny application for nationwide PM2.5 monitoring and HMS (Haz
 
 ### 🚀 **Live Application**: [Shiny Smoke Analysis App](https://rcuevas.shinyapps.io/Shiny_Smoke_Analysis/)
 
+![Single Day PM2.5 Map for 7 June 2023 in New York, with HMS smoke plumes, fire detections and AirNow monitors](docs/screenshot.png)
+
+*Single Day PM2.5 Map for 7 June 2023, when Canadian wildfire smoke reached New York: HMS smoke density, fire detections and AirNow PM2.5 monitors.*
+
 ---
 
 ## 🛠️ System Dependencies
