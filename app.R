@@ -554,7 +554,7 @@ check_tiering_csv <- function(url) {
 }
 
 # Function to generate combined plot for daily analysis
-generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, aqStateCode) {
+generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations) {
   tryCatch({
     selected_year <- format(selectedDate, "%Y")
     
@@ -562,8 +562,15 @@ generate_combined_plot <- function(selectedDate, selectedState, ASOS_Stations, a
     formatted_date <- format(selectedDate, "%Y%m%d")
     daily_data_files <- readLines(paste0(base_url, formatted_date, "/daily_data_v2.dat"))
     
-    # Use aqStateCode for air quality data filtering
-    state_lines <- daily_data_files[grep(paste0("^", aqStateCode), daily_data_files)]
+    # Keep the selected state's monitors. This used to be grep("^<state code>"),
+    # but each line starts with the date, and the state-code input it read was
+    # never in the UI, so it matched every line; only the point-in-state check
+    # further down kept the maps right. Read the state from the site ID instead.
+    fields      <- strsplit(daily_data_files, "|", fixed = TRUE)
+    us_id       <- airnow_us_id(vapply(fields, `[`, character(1), 2),
+                                vapply(fields, `[`, character(1), 13))
+    state_fips  <- state_name_to_code[stringr::str_to_title(selectedState)]
+    state_lines <- daily_data_files[!is.na(us_id) & substr(us_id, 1, 2) == state_fips]
     
     if (length(state_lines) == 0) {
       return(list(error = "No data found for the selected state code and date"))
@@ -2424,12 +2431,6 @@ server <- function(input, output, session) {
   combinedData <- reactiveVal(NULL)
   state_sf_transformed <- reactiveVal(NULL)
   
-  # Add the new observe block here, after the reactive values
-  observe({
-    req(pm25Data())
-    state_codes <- unique(pm25Data()$State_Code)
-    updatePickerInput(session, "aqStateCode", choices = state_codes)
-  })
   
   
   # HMS Smoke PM2.5 Analysis Server Logic
@@ -2941,7 +2942,7 @@ server <- function(input, output, session) {
         }
         
         list(
-          air_quality = generate_combined_plot(input$date, input$state, asos_data, input$aqStateCode)
+          air_quality = generate_combined_plot(input$date, input$state, asos_data)
         )
       }, error = function(e) {
         list(error = paste("Error generating data:", conditionMessage(e)))
